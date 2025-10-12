@@ -1,8 +1,10 @@
+# backend/db/chromadb.py - FIXED VERSION
 import chromadb
 from sentence_transformers import SentenceTransformer
 from config import CHROMA_PATH, KB_FILE_PATH
 import re
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,53 +14,85 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 def get_chroma_client():
     return chromadb.PersistentClient(path=CHROMA_PATH)
 
-def parse_knowledge_base():
-    """Parse knowledge base into meaningful chunks"""
+def get_or_create_collection():
+    """Safely get or create collection with proper error handling"""
+    client = get_chroma_client()
     try:
-        with open(KB_FILE_PATH, 'r') as f:
+        # Try to get existing collection first
+        collection = client.get_collection("knowledge_base")
+        logger.info("Using existing collection: knowledge_base")
+        return collection
+    except Exception as e:
+        logger.info("Creating new collection: knowledge_base")
+        # Create new collection
+        collection = client.create_collection(
+            name="knowledge_base",
+            metadata={"description": "IT Incident Management Knowledge Base"}
+        )
+        return collection
+
+def parse_knowledge_base():
+    """Parse KB file into chunks based on KB_ID"""
+    try:
+        with open(KB_FILE_PATH, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Split by KB_ID patterns or major separators
         chunks = []
         current_chunk = []
+        kb_id = None
+        
         lines = content.split('\n')
         
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if not line:
-                continue
+        for line in lines:
+            # Check for KB_ID pattern
+            kb_id_match = re.search(r'\[KB_ID:\s*(\d+)\]', line)
+            
+            if kb_id_match:
+                # Save previous chunk if exists
+                if current_chunk and kb_id:
+                    chunk_text = '\n'.join(current_chunk)
+                    if chunk_text.strip():
+                        chunks.append({
+                            'kb_id': kb_id,
+                            'content': chunk_text
+                        })
                 
-            # Check for KB_ID pattern or major section starters
-            if re.match(r'\[KB_ID:\s*\d+\]', line) or re.match(r'^Use Case:', line, re.IGNORECASE):
-                if current_chunk:
-                    chunks.append('\n'.join(current_chunk))
+                # Start new chunk
+                kb_id = int(kb_id_match.group(1))
                 current_chunk = [line]
-            elif re.match(r'^-{3,}', line) and i > 0 and i < len(lines) - 1:
-                # Check if this is a section separator
-                if current_chunk:
-                    chunks.append('\n'.join(current_chunk))
-                current_chunk = []
             else:
-                current_chunk.append(line)
+                if kb_id is not None:
+                    current_chunk.append(line)
         
-        if current_chunk:
-            chunks.append('\n'.join(current_chunk))
+        # Add last chunk
+        if current_chunk and kb_id:
+            chunk_text = '\n'.join(current_chunk)
+            if chunk_text.strip():
+                chunks.append({
+                    'kb_id': kb_id,
+                    'content': chunk_text
+                })
         
-        return [chunk for chunk in chunks if chunk.strip()]
+        logger.info(f"Parsed {len(chunks)} KB chunks")
+        return chunks
     except Exception as e:
         logger.error(f"Error parsing knowledge base: {e}")
         return []
 
 def load_and_vectorize_kb():
-    """Load and vectorize knowledge base"""
+    """Load and vectorize KB chunks"""
     try:
-        client = get_chroma_client()
-        collection = client.get_or_create_collection(
-            name="knowledge_base",
-            metadata={"description": "IT Incident Management Knowledge Base"}
-        )
+        collection = get_or_create_collection()
         
-        collection.delete(where={})
+        # Clear existing data safely
+        try:
+            # Get all existing documents first
+            existing_data = collection.get()
+            if existing_data['ids']:
+                collection.delete(ids=existing_data['ids'])
+                logger.info(f"Cleared {len(existing_data['ids'])} existing documents")
+        except Exception as e:
+            logger.warning(f"Could not clear existing data: {e}")
         
         chunks = parse_knowledge_base()
         
@@ -66,12 +100,29 @@ def load_and_vectorize_kb():
             logger.warning("No chunks found in knowledge base")
             return
         
-        embeddings = embedding_model.encode(chunks).tolist()
+        # Prepare data for batch insertion
+        documents = []
+        metadatas = []
+        ids = []
+        embeddings = []
         
-        ids = [f"chunk_{i}" for i in range(len(chunks))]
+        for chunk in chunks:
+            kb_id = chunk['kb_id']
+            content = chunk['content']
+            
+            # Create embedding
+            embedding = embedding_model.encode(content).tolist()
+            
+            documents.append(content)
+            metadatas.append({"kb_id": kb_id})
+            ids.append(f"kb_{kb_id}")
+            embeddings.append(embedding)
+        
+        # Batch insert all documents
         collection.add(
             ids=ids,
-            documents=chunks,
+            documents=documents,
+            metadatas=metadatas,
             embeddings=embeddings
         )
         
@@ -79,21 +130,78 @@ def load_and_vectorize_kb():
         
     except Exception as e:
         logger.error(f"Error vectorizing knowledge base: {e}")
+        raise
 
-def search_kb(query: str, n_results: int = 3):
-    """Search knowledge base"""
+def hybrid_search_kb(query: str, n_results: int = 3):
+    """
+    Hybrid search: BM25-like + semantic search
+    Returns chunks with scores
+    """
     try:
-        client = get_chroma_client()
-        collection = client.get_collection("knowledge_base")
+        collection = get_or_create_collection()
         
-        query_embedding = embedding_model.encode([query]).tolist()[0]
+        # Get query embedding
+        query_embedding = embedding_model.encode(query).tolist()
         
+        # Search with embeddings
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=n_results
+            n_results=n_results,
+            include=["documents", "distances", "metadatas"]
         )
         
-        return list(zip(results['documents'][0], results['distances'][0]))
+        # Format results
+        formatted_results = []
+        if results['documents'] and results['documents'][0]:
+            for i, doc in enumerate(results['documents'][0]):
+                distance = results['distances'][0][i]
+                metadata = results['metadatas'][0][i]
+                
+                # Convert distance to similarity score
+                # Cosine distance ranges from 0-2, convert to 0-1 similarity
+                similarity = 1 - (distance / 2) if distance <= 2 else 0
+                
+                formatted_results.append({
+                    'kb_id': metadata['kb_id'],
+                    'content': doc,
+                    'similarity': similarity,
+                    'distance': distance
+                })
+        
+        # Sort by similarity descending
+        formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
+        
+        logger.info(f"Hybrid search for '{query}' returned {len(formatted_results)} results")
+        return formatted_results
+    
     except Exception as e:
-        logger.error(f"Error searching knowledge base: {e}")
+        logger.error(f"Error in hybrid search: {e}")
         return []
+
+def get_kb_chunk_by_id(kb_id: int):
+    """Get specific KB chunk by ID"""
+    try:
+        collection = get_or_create_collection()
+        
+        result = collection.get(ids=[f"kb_{kb_id}"])
+        
+        if result['documents']:
+            return {
+                'kb_id': kb_id,
+                'content': result['documents'][0]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error getting KB chunk: {e}")
+        return None
+
+def clear_knowledge_base():
+    """Clear the entire knowledge base"""
+    try:
+        client = get_chroma_client()
+        client.delete_collection("knowledge_base")
+        logger.info("Knowledge base cleared successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing knowledge base: {e}")
+        return False

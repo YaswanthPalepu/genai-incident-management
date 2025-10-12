@@ -1,3 +1,4 @@
+# backend/db/mongodb.py - REFACTORED (Key sections)
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from config import MONGO_DETAILS, DB_NAME
@@ -15,38 +16,42 @@ def serialize_document(doc):
     if not doc:
         return None
     
-    # Convert ObjectId to string and remove it from the document
     if '_id' in doc:
         doc['_id'] = str(doc['_id'])
     
-    # Convert any other ObjectId fields if they exist
     for key, value in doc.items():
         if isinstance(value, ObjectId):
             doc[key] = str(value)
         elif isinstance(value, datetime):
-            # Ensure datetime is in ISO format
             doc[key] = value.isoformat()
+        elif isinstance(value, list):
+            # Handle list of dicts (messages)
+            for item in value:
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        if isinstance(v, datetime):
+                            item[k] = v.isoformat()
     
     return doc
 
-async def create_incident(incident_data: dict):
-    """Create a new incident"""
+async def create_incident(incident_data: dict) -> bool:
+    """Create new incident in MongoDB"""
     try:
-        # Ensure timestamps are properly set
         if 'created_on' not in incident_data:
             incident_data['created_on'] = datetime.utcnow()
         if 'updated_on' not in incident_data:
             incident_data['updated_on'] = datetime.utcnow()
-            
+        
         result = await incidents_collection.insert_one(incident_data)
-        logger.info(f"Created incident with ID: {incident_data['incident_id']}")
+        logger.info(f"Created incident: {incident_data.get('incident_id')}")
         return True
+    
     except Exception as e:
         logger.error(f"Error creating incident: {e}")
         return False
 
 async def get_incident(incident_id: str):
-    """Get incident by ID"""
+    """Get single incident by ID"""
     try:
         incident = await incidents_collection.find_one({"incident_id": incident_id})
         return serialize_document(incident)
@@ -55,7 +60,7 @@ async def get_incident(incident_id: str):
         return None
 
 async def get_all_incidents():
-    """Get all incidents"""
+    """Get all incidents sorted by creation date"""
     try:
         cursor = incidents_collection.find().sort("created_on", -1)
         incidents = []
@@ -66,23 +71,30 @@ async def get_all_incidents():
         logger.error(f"Error getting all incidents: {e}")
         return []
 
-async def update_incident(incident_id: str, update_data: dict):
-    """Update incident"""
+async def update_incident(incident_id: str, update_data: dict) -> bool:
+    """Update incident in MongoDB"""
     try:
-        # Always update the updated_on timestamp
         update_data["updated_on"] = datetime.utcnow()
         
         result = await incidents_collection.update_one(
             {"incident_id": incident_id},
             {"$set": update_data}
         )
-        return result.modified_count > 0
+        
+        success = result.modified_count > 0
+        if success:
+            logger.info(f"Updated incident: {incident_id}")
+        else:
+            logger.warning(f"Incident not found or no changes: {incident_id}")
+        
+        return success
+    
     except Exception as e:
         logger.error(f"Error updating incident: {e}")
         return False
 
-async def delete_incident(incident_id: str):
-    """Delete incident by ID"""
+async def delete_incident(incident_id: str) -> bool:
+    """Delete incident from MongoDB"""
     try:
         result = await incidents_collection.delete_one({"incident_id": incident_id})
         return result.deleted_count > 0
