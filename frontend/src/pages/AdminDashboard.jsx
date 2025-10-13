@@ -1,11 +1,12 @@
+// frontend/src/pages/AdminDashboard.jsx - REFACTORED (Key sections)
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   getAllIncidents,
   getIncidentDetails,
   updateIncidentStatus,
   getKnowledgeBaseContent,
-  updateKnowledgeBase
+  updateKnowledgeBase,
+  getAdminStats
 } from '../services/api';
 
 function AdminDashboard({ setAuth }) {
@@ -17,18 +18,19 @@ function AdminDashboard({ setAuth }) {
   const [kbMessage, setKbMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const navigate = useNavigate();
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     fetchIncidents();
     fetchKbContent();
+    fetchStats();
   }, []);
 
   const fetchIncidents = async () => {
     try {
       setIsLoading(true);
       const response = await getAllIncidents();
-      setIncidents(response.data);
+      setIncidents(response.data.incidents || []);
     } catch (error) {
       console.error('Error fetching incidents:', error);
       alert('Failed to fetch incidents. Please check if the backend is running.');
@@ -46,15 +48,22 @@ function AdminDashboard({ setAuth }) {
     }
   };
 
+  const fetchStats = async () => {
+    try {
+      const response = await getAdminStats();
+      setStats(response.data.stats);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
+
   const handleIncidentClick = async (incidentId) => {
     try {
-      console.log('Fetching incident details for:', incidentId);
       const response = await getIncidentDetails(incidentId);
-      console.log('Incident details:', response.data);
-      setSelectedIncident(response.data);
+      setSelectedIncident(response.data.incident);
     } catch (error) {
       console.error('Error fetching incident details:', error);
-      alert('Failed to load incident details. Please check the console for errors.');
+      alert('Failed to load incident details.');
     }
   };
 
@@ -67,12 +76,13 @@ function AdminDashboard({ setAuth }) {
       }
     } catch (error) {
       console.error('Error updating incident status:', error);
+      alert('Failed to update incident status.');
     }
   };
 
   const handleUpdateKb = async () => {
     if (!kbContent.trim()) {
-      setKbMessage('❌ Knowledge Base content cannot be empty.');
+      setKbMessage('Knowledge Base content cannot be empty.');
       return;
     }
 
@@ -80,19 +90,14 @@ function AdminDashboard({ setAuth }) {
     setKbMessage('');
     try {
       await updateKnowledgeBase(kbContent);
-      setKbMessage('✅ Knowledge Base updated and re-indexed successfully!');
+      setKbMessage('Knowledge Base updated and re-indexed successfully!');
       setTimeout(() => setKbMessage(''), 3000);
     } catch (error) {
       console.error('Error updating KB:', error);
-      setKbMessage('❌ Failed to update Knowledge Base. Please check the backend.');
+      setKbMessage('Failed to update Knowledge Base. Please check the backend.');
     } finally {
       setIsUpdatingKb(false);
     }
-  };
-
-  const handleLogout = () => {
-    setAuth(false);
-    navigate('/admin/login');
   };
 
   const filteredIncidents = incidents.filter(incident => {
@@ -106,11 +111,12 @@ function AdminDashboard({ setAuth }) {
 
   const getStatusColor = (status) => {
     const colors = {
+      'New': '#6c757d',
       'Pending Information': '#ffa726',
       'In Progress': '#42a5f5',
-      'Pending Admin Review': '#ff7043',
       'Resolved': '#66bb6a',
-      'Closed': '#78909c'
+      'Open': '#ff7043',
+      'Pending Admin Review': '#d32f2f'
     };
     return colors[status] || '#78909c';
   };
@@ -118,42 +124,46 @@ function AdminDashboard({ setAuth }) {
   return (
     <div className="full-page-container">
       <div className="card admin-card">
-        {/* Header */}
         <div className="admin-header">
           <div className="admin-title">
-            <h1>🛠️ Admin Dashboard</h1>
+            <h1>Admin Dashboard</h1>
             <p>Manage incidents and knowledge base</p>
           </div>
-          <button 
-            onClick={handleLogout} 
-            className="logout-button"
-            title="Logout from admin"
-          >
-            🚪 Logout
-          </button>
         </div>
 
+        {stats && (
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-number">{stats.total_incidents}</div>
+              <div className="stat-label">Total Incidents</div>
+            </div>
+            {Object.entries(stats.by_status).map(([status, count]) => (
+              <div key={status} className="stat-card">
+                <div className="stat-number">{count}</div>
+                <div className="stat-label">{status}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="admin-dashboard-layout">
-          {/* Knowledge Base Editor */}
           <div className="kb-editor-section">
             <div className="section-header">
-              <h2>📚 Knowledge Base</h2>
-              <div className="section-actions">
-                <button 
-                  onClick={fetchKbContent} 
-                  className="refresh-button"
-                  title="Reload KB content"
-                >
-                  🔄
-                </button>
-              </div>
+              <h2>Knowledge Base</h2>
+              <button 
+                onClick={fetchKbContent} 
+                className="refresh-button"
+                title="Reload KB content"
+              >
+                Refresh
+              </button>
             </div>
             
             <div className="kb-editor-container">
               <textarea
                 value={kbContent}
                 onChange={(e) => setKbContent(e.target.value)}
-                placeholder="Enter your knowledge base content here. Use [KB_ID: X] format for entries..."
+                placeholder="Enter KB content with [KB_ID: X] format..."
                 className="kb-textarea"
               />
               <div className="kb-actions">
@@ -162,56 +172,51 @@ function AdminDashboard({ setAuth }) {
                   disabled={isUpdatingKb}
                   className="update-kb-button"
                 >
-                  {isUpdatingKb ? '⏳ Updating...' : '💾 Update Knowledge Base'}
+                  {isUpdatingKb ? 'Updating...' : 'Update Knowledge Base'}
                 </button>
-                <div className="kb-stats">
-                  {kbContent && (
-                    <span>
-                      📊 {kbContent.split('\n').filter(line => line.trim()).length} lines
-                    </span>
-                  )}
-                </div>
+                {kbContent && (
+                  <span className="kb-stats">
+                    {kbContent.split('\n').filter(line => line.trim()).length} lines
+                  </span>
+                )}
               </div>
               {kbMessage && (
-                <div className={`kb-message ${kbMessage.includes('✅') ? 'success' : 'error'}`}>
+                <div className={`kb-message ${kbMessage.includes('successfully') ? 'success' : 'error'}`}>
                   {kbMessage}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Incidents Section */}
           <div className="incidents-section">
             <div className="section-header">
-              <h2>📋 Incidents ({filteredIncidents.length})</h2>
+              <h2>Incidents ({filteredIncidents.length})</h2>
               <div className="incident-controls">
-                <div className="search-box">
-                  <input
-                    type="text"
-                    placeholder="Search incidents..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="search-input"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="Search incidents..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                />
                 <select 
                   value={filterStatus} 
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className="status-filter"
                 >
                   <option value="">All Status</option>
+                  <option value="New">New</option>
                   <option value="Pending Information">Pending Information</option>
                   <option value="In Progress">In Progress</option>
-                  <option value="Pending Admin Review">Pending Admin Review</option>
                   <option value="Resolved">Resolved</option>
-                  <option value="Closed">Closed</option>
+                  <option value="Open">Open</option>
+                  <option value="Pending Admin Review">Pending Admin Review</option>
                 </select>
                 <button 
                   onClick={fetchIncidents} 
                   className="refresh-button"
-                  title="Refresh incidents"
                 >
-                  🔄
+                  Refresh
                 </button>
               </div>
             </div>
@@ -223,14 +228,7 @@ function AdminDashboard({ setAuth }) {
               </div>
             ) : filteredIncidents.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon">📭</div>
-                <h3>No incidents found</h3>
-                <p>
-                  {searchTerm || filterStatus 
-                    ? 'Try adjusting your search or filter criteria.'
-                    : 'No incidents have been created yet.'
-                  }
-                </p>
+                <p>No incidents found</p>
               </div>
             ) : (
               <div className="incidents-table-container">
@@ -248,11 +246,8 @@ function AdminDashboard({ setAuth }) {
                     {filteredIncidents.map((incident) => (
                       <tr key={incident.incident_id}>
                         <td className="incident-id">{incident.incident_id}</td>
-                        <td className="user-demand" title={incident.user_demand}>
-                          {incident.user_demand.length > 50 
-                            ? incident.user_demand.substring(0, 50) + '...'
-                            : incident.user_demand
-                          }
+                        <td className="user-demand">
+                          {incident.user_demand.substring(0, 50)}...
                         </td>
                         <td>
                           <span 
@@ -262,34 +257,16 @@ function AdminDashboard({ setAuth }) {
                             {incident.status}
                           </span>
                         </td>
-                        <td className="created-time">
+                        <td>
                           {new Date(incident.created_on).toLocaleDateString()}
                         </td>
                         <td className="action-buttons">
                           <button 
                             className="view-button"
                             onClick={() => handleIncidentClick(incident.incident_id)}
-                            title="View details"
                           >
-                            👁️ View
+                            View
                           </button>
-                          {incident.status !== 'Resolved' && incident.status !== 'Closed' ? (
-                            <button 
-                              className="resolve-button"
-                              onClick={() => handleStatusChange(incident.incident_id, 'Resolved')}
-                              title="Mark as resolved"
-                            >
-                              ✅ Resolve
-                            </button>
-                          ) : (
-                            <button 
-                              className="reopen-button"
-                              onClick={() => handleStatusChange(incident.incident_id, 'In Progress')}
-                              title="Reopen incident"
-                            >
-                              🔄 Reopen
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))}
@@ -300,7 +277,6 @@ function AdminDashboard({ setAuth }) {
           </div>
         </div>
 
-        {/* Incident Details Modal */}
         {selectedIncident && (
           <IncidentDetailsModal
             incident={selectedIncident}
@@ -314,7 +290,6 @@ function AdminDashboard({ setAuth }) {
   );
 }
 
-// Incident Details Modal Component
 function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColor }) {
   const [newStatus, setNewStatus] = useState(incident.status);
 
@@ -326,16 +301,16 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
     <div className="incident-details-modal">
       <div className="modal-content">
         <button className="close-button" onClick={onClose}>&times;</button>
-        <h3>Incident Details: {incident.incident_id}</h3>
+        <h3>Incident: {incident.incident_id}</h3>
         
         <div className="incident-summary">
           <div className="summary-item">
-            <strong>User Issue:</strong>
+            <strong>Issue:</strong>
             <p>{incident.user_demand}</p>
           </div>
           
           <div className="summary-item">
-            <strong>Current Status:</strong>
+            <strong>Status:</strong>
             <span 
               className="status-badge"
               style={{ backgroundColor: getStatusColor(incident.status) }}
@@ -346,33 +321,34 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
 
           <div className="status-select">
             <strong>Update Status:</strong>
-            <div className="status-controls">
-              <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
-                <option value="Pending Information">Pending Information</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Pending Admin Review">Pending Admin Review</option>
-                <option value="Resolved">Resolved</option>
-                <option value="Closed">Closed</option>
-              </select>
-              <button onClick={handleSaveStatus} className="update-status-btn">
-                Update
-              </button>
-            </div>
+            <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
+              <option value="New">New</option>
+              <option value="Pending Information">Pending Information</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Open">Open</option>
+              <option value="Pending Admin Review">Pending Admin Review</option>
+            </select>
+            <button onClick={handleSaveStatus} className="update-status-btn">
+              Update
+            </button>
           </div>
 
           <div className="summary-grid">
             <div className="grid-item">
-              <strong>Created On:</strong>
+              <strong>Created:</strong>
               <span>{new Date(incident.created_on).toLocaleString()}</span>
             </div>
             <div className="grid-item">
-              <strong>Updated On:</strong>
+              <strong>Updated:</strong>
               <span>{new Date(incident.updated_on).toLocaleString()}</span>
             </div>
-            <div className="grid-item">
-              <strong>KB Reference:</strong>
-              <span>{incident.kb_reference || 'N/A'}</span>
-            </div>
+            {incident.kb_reference && (
+              <div className="grid-item">
+                <strong>KB Reference:</strong>
+                <span>{incident.kb_reference}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -383,15 +359,13 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
               <div key={index} className={`conversation-message ${msg.sender.toLowerCase()}`}>
                 <div className="message-header">
                   <strong>{msg.sender}:</strong>
-                  <span className="message-time">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </span>
+                  <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
                 </div>
                 <div className="message-content">{msg.text}</div>
               </div>
             ))
           ) : (
-            <p>No conversation history available.</p>
+            <p>No conversation history.</p>
           )}
         </div>
       </div>

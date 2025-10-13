@@ -1,3 +1,4 @@
+// frontend/src/services/api.js - REFACTORED
 import axios from 'axios';
 
 const BASE_URL = 'http://localhost:8000/api';
@@ -7,15 +8,16 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000
 });
 
-// User API
+// User APIs
 export const chatWithAI = (session_id, query) => {
   return api.post('/user/chat', { session_id, query });
 };
 
-export const endSession = (session_id) => {
-  return api.post('/user/end_session', { session_id });
+export const endSession = (sessionData) => {
+  return api.post('/user/end_session', sessionData);
 };
 
 // Admin APIs
@@ -43,11 +45,21 @@ export const updateKnowledgeBase = (kb_content) => {
   return api.post('/admin/knowledge_base', { kb_content });
 };
 
-// Add request interceptor for better error handling
+export const getAdminStats = () => {
+  return api.get('/admin/stats');
+};
+
+// Error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    if (error.response) {
+      console.error('API Error:', error.response.data);
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+    } else {
+      console.error('Error:', error.message);
+    }
     return Promise.reject(error);
   }
 );

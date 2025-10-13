@@ -1,3 +1,4 @@
+// frontend/src/components/ChatWindow.jsx - REFACTORED
 import React, { useRef, useEffect } from 'react';
 
 function ChatWindow({ messages }) {
@@ -12,22 +13,19 @@ function ChatWindow({ messages }) {
   }, [messages]);
 
   const formatMessageText = (text) => {
-    // Convert line breaks to <br /> and format incident IDs
     return text.split('\n').map((line, index) => {
-      // Highlight incident IDs
-      if (line.includes('INC') && line.match(/INC\d+/)) {
+      // Highlight incident IDs and statuses
+      if (line.includes('INC') || line.includes('Incident ID') || line.includes('Status')) {
         return (
-          <span key={index} className="incident-id-highlight">
+          <div key={index} className="highlighted-line">
             {line}
-            <br />
-          </span>
+          </div>
         );
       }
       return (
-        <span key={index}>
+        <div key={index}>
           {line}
-          <br />
-        </span>
+        </div>
       );
     });
   };
