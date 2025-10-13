@@ -1,4 +1,3 @@
-# backend/db/mongodb.py - REFACTORED (Key sections)
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from config import MONGO_DETAILS, DB_NAME
@@ -25,7 +24,7 @@ def serialize_document(doc):
         elif isinstance(value, datetime):
             doc[key] = value.isoformat()
         elif isinstance(value, list):
-            # Handle list of dicts (messages)
+            # Handle list of dicts (messages) with datetime conversion
             for item in value:
                 if isinstance(item, dict):
                     for k, v in item.items():
@@ -43,7 +42,7 @@ async def create_incident(incident_data: dict) -> bool:
             incident_data['updated_on'] = datetime.utcnow()
         
         result = await incidents_collection.insert_one(incident_data)
-        logger.info(f"Created incident: {incident_data.get('incident_id')}")
+        logger.info(f"Created incident: {incident_data.get('incident_id')} with {len(incident_data.get('additional_info', []))} messages")
         return True
     
     except Exception as e:
@@ -72,7 +71,7 @@ async def get_all_incidents():
         return []
 
 async def update_incident(incident_id: str, update_data: dict) -> bool:
-    """Update incident in MongoDB"""
+    """Update incident in MongoDB - REPLACES additional_info with new data"""
     try:
         update_data["updated_on"] = datetime.utcnow()
         

@@ -1,51 +1,35 @@
 from fastapi import APIRouter, HTTPException
 from models import UserQuery, SessionEndRequest
 from services.llm_service import (
-    analyze_query_and_route,
-    handle_direct_response,
-    handle_kb_search_and_incident,
+    handle_user_query,
     get_session_incident_id,
     get_session_status,
     clear_session_data
 )
 import logging
+import uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @router.post("/chat")
 async def chat_with_ai(user_query: UserQuery):
+    """
+    Main chat endpoint using pure LLM intelligence
+    """
     session_id = user_query.session_id or str(uuid.uuid4())
     query = user_query.query.strip()
     
-    logger.info(f"New message - Session: {session_id}, Query: {query[:50]}...")
+    logger.info(f"Chat request - Session: {session_id}, Query: {query}")
     
     try:
-        # Step 1: Intelligent query analysis by LLM
-        analysis = await analyze_query_and_route(query, session_id)
-        action = analysis.get('action', 'KB_SEARCH')
+        # Single intelligent function handles everything using LLM
+        response, incident_id, status = await handle_user_query(query, session_id)
         
-        logger.info(f"LLM Analysis - Action: {action}, IT Related: {analysis.get('is_it_related')}")
-        
-        # Step 2: Route based on LLM analysis
-        if action == "DIRECT_RESPONSE":
-            # LLM handles greetings, farewells, irrelevant topics directly
-            response_text = await handle_direct_response(query, session_id, analysis)
-            incident_id = None
-            status = "No Incident"
-            
-        else:
-            # Handle IT incidents with KB search and incident management
-            response_text, incident_id, status, kb_chunk = await handle_kb_search_and_incident(
-                query, session_id
-            )
-        
-        # Step 3: Format final response
-        final_response = response_text
-        
-        # Add incident info if exists
+        # Format final response
+        final_response = response
         if incident_id:
-            final_response += f"\n\n🆔 **Incident ID:** {incident_id}\n📊 **Status:** {status}"
+            final_response = f"{response}\n\n🆔 **Incident ID:** {incident_id}\n📊 **Status:** {status}"
         
         return {
             "success": True,
