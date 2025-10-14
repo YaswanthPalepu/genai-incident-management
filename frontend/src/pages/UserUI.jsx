@@ -25,7 +25,7 @@ function UserUI() {
       id: Date.now(),
       sender: 'AI',
       text: 'Hello! I\'m your IT Incident Assistant. Please describe any IT issues you\'re experiencing, and I\'ll help you resolve them.',
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
     setMessages([welcomeMessage]);
   }, []);
@@ -38,10 +38,10 @@ function UserUI() {
     if (!text.trim() || isLoading) return;
 
     const userMessage = {
-      id: Date.now(),
-      sender: 'User',
-      text: text.trim(),
-      timestamp: new Date()
+        id: Date.now(),
+        sender: 'User',
+        text: text.trim(),
+        timestamp: new Date().toISOString()
     };
     
     setMessages(prev => [...prev, userMessage]);
@@ -50,45 +50,50 @@ function UserUI() {
     setConversationActive(true);
 
     try {
-      const response = await chatWithAI(sessionId, text.trim());
-      const { response: aiResponse, incident_id, status } = response.data;
+        const response = await chatWithAI(sessionId, text.trim());
+        const { response: aiResponse, incident_id, status, show_incident_info } = response.data;
 
-      // Update incident info if provided
-      if (incident_id) {
-        setIncidentInfo({ 
-          id: incident_id, 
-          status: status,
-          kb_reference: response.data.kb_reference || null
-        });
-      }
+        // Update incident info if provided - only when show_incident_info is true
+        if (incident_id && show_incident_info) {
+            setIncidentInfo({ 
+                id: incident_id, 
+                status: status,
+                kb_reference: response.data.kb_reference || null
+            });
+        } else if (incident_id) {
+            // Update status only without forcing the info bar to show
+            setIncidentInfo(prev => ({ 
+                ...prev, 
+                status: status 
+            }));
+        }
 
-      // Add AI response
-      const aiMessage = {
-        id: Date.now() + 1,
-        sender: 'AI',
-        text: aiResponse,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, aiMessage]);
+        // Add AI response
+        const aiMessage = {
+            id: Date.now() + 1,
+            sender: 'AI',
+            text: aiResponse,
+            timestamp: new Date().toISOString()
+        };
+        
+        setMessages(prev => [...prev, aiMessage]);
 
     } catch (error) {
-      console.error('Error sending message:', error);
-      setConnectionError(true);
-      
-      const errorMessage = {
-        id: Date.now() + 1,
-        sender: 'AI',
-        text: 'Sorry, I encountered a connection error. Please ensure the backend server is running on port 8000 and try again.',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
+        console.error('Error sending message:', error);
+        setConnectionError(true);
+        
+        const errorMessage = {
+            id: Date.now() + 1,
+            sender: 'AI',
+            text: 'Sorry, I encountered a connection error. Please ensure the backend server is running on port 8000 and try again.',
+            timestamp: new Date().toISOString()
+        };
+        
+        setMessages(prev => [...prev, errorMessage]);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
   };
-
   const handleEndSession = async () => {
     if (sessionId) {
       try {
@@ -108,7 +113,7 @@ function UserUI() {
       id: Date.now(),
       sender: 'AI',
       text: 'New session started. How can I help you with your IT issues today?',
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
     
     setMessages([welcomeMessage]);

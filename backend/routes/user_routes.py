@@ -24,11 +24,20 @@ async def chat_with_ai(user_query: UserQuery):
     
     try:
         # Single intelligent function handles everything using LLM
-        response, incident_id, status = await handle_user_query(query, session_id)
+        response, incident_id, status, status_changed = await handle_user_query(query, session_id)
         
-        # Format final response
+        # **FIXED: Only include incident info when it's newly created or status changes**
+        # Get previous status to detect changes
+        #previous_status = get_session_status(session_id)
+        
+        # Format final response - only show incident info when relevant
         final_response = response
-        if incident_id:
+        show_incident_info = (  
+            incident_id and 
+            (status_changed or "created" in response.lower() or "incident" in response.lower())
+        )
+        
+        if show_incident_info:
             final_response = f"{response}\n\n🆔 **Incident ID:** {incident_id}\n📊 **Status:** {status}"
         
         return {
@@ -36,7 +45,8 @@ async def chat_with_ai(user_query: UserQuery):
             "session_id": session_id,
             "incident_id": incident_id,
             "response": final_response,
-            "status": status
+            "status": status,
+            "show_incident_info": show_incident_info  # Frontend can use this to show/hide incident bar
         }
         
     except Exception as e:
@@ -46,7 +56,8 @@ async def chat_with_ai(user_query: UserQuery):
             "session_id": session_id,
             "incident_id": None,
             "response": "I encountered an error. Please try again.",
-            "status": "Error"
+            "status": "Error",
+            "show_incident_info": False
         }
 
 @router.post("/end_session")

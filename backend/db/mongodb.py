@@ -3,6 +3,7 @@ from bson import ObjectId
 from config import MONGO_DETAILS, DB_NAME
 import logging
 from datetime import datetime
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,9 @@ async def create_incident(incident_data: dict) -> bool:
     """Create new incident in MongoDB"""
     try:
         if 'created_on' not in incident_data:
-            incident_data['created_on'] = datetime.utcnow()
+            incident_data['created_on'] = datetime.now(pytz.UTC).isoformat()
         if 'updated_on' not in incident_data:
-            incident_data['updated_on'] = datetime.utcnow()
+            incident_data['updated_on'] = datetime.now(pytz.UTC).isoformat()
         
         result = await incidents_collection.insert_one(incident_data)
         logger.info(f"Created incident: {incident_data.get('incident_id')} with {len(incident_data.get('additional_info', []))} messages")
@@ -73,7 +74,7 @@ async def get_all_incidents():
 async def update_incident(incident_id: str, update_data: dict) -> bool:
     """Update incident in MongoDB - REPLACES additional_info with new data"""
     try:
-        update_data["updated_on"] = datetime.utcnow()
+        update_data["updated_on"] = datetime.now(pytz.UTC).isoformat()
         
         result = await incidents_collection.update_one(
             {"incident_id": incident_id},

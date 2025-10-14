@@ -1,4 +1,4 @@
-// frontend/src/components/ChatWindow.jsx - REFACTORED
+// frontend/src/components/ChatWindow.jsx - UPDATED
 import React, { useRef, useEffect } from 'react';
 
 function ChatWindow({ messages }) {
@@ -11,6 +11,19 @@ function ChatWindow({ messages }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Function to format ISO timestamp to local time
+  const formatTimestamp = (isoString) => {
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch (error) {
+      return 'Invalid time';
+    }
+  };
 
   const formatMessageText = (text) => {
     return text.split('\n').map((line, index) => {
@@ -46,10 +59,7 @@ function ChatWindow({ messages }) {
                 {msg.sender === 'AI' ? '🤖 IT Assistant' : '👤 You'}
               </span>
               <span className="message-time">
-                {new Date(msg.timestamp).toLocaleTimeString([], { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
+                {formatTimestamp(msg.timestamp)}
               </span>
             </div>
             <div className="message-content">

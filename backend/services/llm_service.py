@@ -8,7 +8,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import uuid
-
+import pytz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,8 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
             'kb_chunk': None,
             'current_step': 0,
             'required_info_gathered': False,
-            'all_steps_completed': False
+            'all_steps_completed': False,
+            'previous_status': 'No Incident'  # Track status changes
         }
     
     session = _session_data[session_id]
@@ -55,7 +56,7 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
     user_message = {
         'sender': 'User',
         'text': query,
-        'timestamp': datetime.utcnow()
+        'timestamp': datetime.now(pytz.UTC).isoformat()
     }
     session['conversation'].append(user_message)
     
@@ -63,7 +64,12 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
     conversation_context = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in session['conversation'][-6:]])
     
     # Single intelligent prompt that handles everything
-    system_prompt = f"""You are an intelligent IT Incident Management AI Assistant. Use your intelligence and context awareness to handle all user interactions naturally.
+    system_prompt = f"""You are an intelligent IT Incident Management AI Assistant. Your SOLE PURPOSE is to handle IT-related incidents and queries. You MUST NOT answer general or non-IT questions.
+
+STRICT DOMAIN RESTRICTION:
+- ONLY handle: IT incidents, computer problems, software issues, network problems, email issues, hardware problems, system errors
+- REJECT and politely decline: general knowledge, weather, news, math, science, history, personal advice, jokes, or any non-IT topics
+- If query is non-IT: Respond with "I specialize only in IT incident management and cannot help with general questions. Please describe any IT issues you're experiencing."
 
 CONVERSATION HISTORY:
 {conversation_context}
@@ -79,18 +85,29 @@ CURRENT SESSION STATE:
 KNOWLEDGE BASE CONTENT (if available):
 {session['kb_chunk']['content'] if session['kb_chunk'] else 'No KB content available'}
 
+IMPORTANT GUIDELINES:
+1. **NEVER include Incident ID or Status in your responses** - this will be handled automatically by the system
+2. **Focus on natural conversation** without technical metadata
+3. **Only mention incident creation once** when first creating it, but don't repeat the ID
+4. **Let the system handle status display** - you just focus on the conversation
+
 INSTRUCTIONS:
 
-1. **INTELLIGENT QUERY ANALYSIS**:
-   - First, analyze the user's query using your intelligence and context awareness
-   - Determine if this is: greeting, farewell, non-IT query/question, or IT incident
+1. **STRICT DOMAIN CHECK**:
+   - FIRST, determine if query is IT-related or general/non-IT
+   - If NON-IT: Immediately respond with domain restriction message
+   - If IT-related: Proceed with incident management
+
+2. **INTELLIGENT QUERY ANALYSIS** (ONLY for IT queries):
+   - Analyze if this is: greeting, farewell, or IT incident
    - Use conversation history to understand the context
 
-2. **RESPONSE STRATEGY**:
-   - **Greeting/Farewell/Non-IT**: Respond naturally and appropriately. Do NOT search KB or create incidents.
+3. **RESPONSE STRATEGY**:
+   - **Non-IT Query**: "I specialize only in IT incident management and cannot help with general questions. Please describe any IT issues you're experiencing."
+   - **Greeting/Farewell**: Respond naturally but briefly. Do NOT search KB or create incidents.
    - **IT Incident**: Proceed with incident management process below.
 
-3. **INCIDENT MANAGEMENT PROCESS** (Only for IT incidents):
+4. **INCIDENT MANAGEMENT PROCESS** (Only for IT incidents):
    - If this is first IT incident message and KB not searched:
      * Search knowledge base for relevant solutions
      * If KB match found: Use the KB content to guide conversation
@@ -101,19 +118,15 @@ INSTRUCTIONS:
      * **Phase 2 - Solution Steps**: Provide solution steps one by one from KB
      * **Phase 3 - Resolution**: Ask if issue is resolved after all steps
 
-4. **STATUS MANAGEMENT**:
-   - Show current incident ID and status in responses when incident exists
-   - Update status based on conversation progress
-   - Use these statuses: "Pending Information", "In Progress", "Resolved", "Open", "Pending Admin Review"
-
 5. **CONVERSATION FLOW**:
-   - Be natural and conversational
+   - Be natural and conversational but focused on IT issues only
    - Only ask for information mentioned in KB as required
    - Only provide solution steps that are in KB
    - Wait for user confirmation between steps
    - Track progress intelligently
+   - **NEVER include Incident ID or Status in your text responses**
 
-Respond naturally and appropriately based on your analysis of the user's intent and context."""
+Respond appropriately based on strict domain analysis of the user's intent."""
 
     try:
         # Single LLM call to handle everything
@@ -180,7 +193,7 @@ Respond naturally and appropriately based on your analysis of the user's intent 
         ai_message = {
             'sender': 'AI',
             'text': response_text,
-            'timestamp': datetime.utcnow()
+            'timestamp': datetime.now(pytz.UTC).isoformat()
         }
         session['conversation'].append(ai_message)
         
@@ -191,8 +204,9 @@ Respond naturally and appropriately based on your analysis of the user's intent 
         incident_id = session.get('incident_id')
         if incident_id:
             await update_incident_in_db(incident_id, session['conversation'], session['status'])
-        
-        return response_text, session.get('incident_id'), session['status']
+        status_changed = session['previous_status'] != session['status']
+        session['previous_status'] = session['status']
+        return response_text, session.get('incident_id'), session['status'], status_changed
         
     except Exception as e:
         logger.error(f"Error in handle_user_query: {e}")
@@ -230,6 +244,17 @@ CONVERSATION CONTEXT:
 
 User Query: "{query}"
 AI Response: "{llm_response}"
+
+IT INCIDENT EXAMPLES:
+- Computer problems, software issues, network problems
+- Email, VPN, password, access, installation issues
+- System errors, performance problems, hardware failures
+
+NON-IT EXAMPLES (REJECT):
+- General knowledge, weather, news, math questions
+- Personal advice, jokes, casual conversation
+- History, science, or any non-technical topics
+
 
 Consider:
 - Is the user describing a real IT problem (computer, software, network, email, hardware, system issues)?
