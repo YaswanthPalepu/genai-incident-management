@@ -88,6 +88,12 @@ CURRENT SESSION STATE:
 KNOWLEDGE BASE CONTENT (if available):
 {session['kb_chunk']['content'] if session['kb_chunk'] else 'No KB content'}
 
+CRITICAL: If status is "Pending Admin Review" (NO KB MATCH):
+- **NEVER provide solutions, troubleshooting steps, or fixes**
+- **ONLY ask questions to understand the issue better**
+- Example of WRONG response: "Let's try restarting your computer..."
+- Example of CORRECT response: "What happens when you try to open it?"
+
 RESPONSE INSTRUCTIONS:
 
 1. **ANALYZE THE QUERY** (in your thinking):
@@ -107,12 +113,13 @@ RESPONSE INSTRUCTIONS:
    - ONLY gather information - do NOT provide solutions
    - Ask ONE question at a time about the issue
    - Be conversational and natural
-   - Example: "When did this issue start?" then wait for response
+   - After gathering sufficient info (4-5 questions answered), inform user: "I've gathered all the necessary information. Let me submit this to our admin team for review. They will investigate and provide a solution."
+   - Then escalate (status becomes "Pending Admin Review" for admin review)
 
 6. **IF IT INCIDENT WITH KB MATCH** (Status: "Pending Information" or "In Progress"):
-   - If gathering info phase: Ask required info one at a time from KB
-   - If providing solutions phase: Give solution steps one at a time
-   - If resolution phase: Ask if issue is resolved
+   - **Phase: gathering_info** - Ask required info from KB one at a time (don't provide solutions yet)
+   - **Phase: providing_solutions** - Once all required info gathered, provide solution steps one by one (each step in separate response)
+   - **Phase: resolution** - Ask if issue is resolved. If yes → "Resolved". If no → escalate to "Pending Admin Review"
    - Wait for user response before moving forward
 
 BE CONVERSATIONAL, EMPATHETIC, AND NATURAL. Ask ONE question at a time."""
@@ -148,6 +155,7 @@ CURRENT SESSION:
 - Incident Created: {session['incident_created']}
 - Status: {session['status']}
 - Phase: {session['phase']}
+- Info Gathered: {session['required_info_gathered']}
 - KB Found: {session['kb_chunk'] is not None}
 
 EXTRACT (respond with ONLY JSON object, nothing else):
@@ -156,20 +164,37 @@ EXTRACT (respond with ONLY JSON object, nothing else):
     "is_off_topic": true/false,
     "is_it_incident": true/false,
     "should_search_kb": true/false,
-    "new_status": "No Incident" | "Pending Admin Review" | "Pending Information" | "In Progress" | "Resolved" | "Escalated",
-    "new_phase": null | "gathering_info" | "providing_solutions" | "resolution",
+    "new_status": "Pending Admin Review" | "Pending Information" | "In Progress" | "Resolved",
+    "new_phase": "gathering_info" | "providing_solutions" | "resolution",
     "info_gathered": true/false,
     "all_steps_done": true/false,
+    "needs_escalation": true/false,
     "reason": "brief reason"
 }}
 
-LOGIC RULES:
-- is_farewell: true if user says goodbye, bye, thanks, done, no more questions, etc.
-- is_off_topic: true if user response unrelated to current IT issue being discussed
+CRITICAL STATUS & PHASE RULES:
+
+**STATUS TRANSITIONS:**
+1. When KB not found: "Pending Admin Review" (gathering_info phase - only ask questions)
+2. When KB found + gathering info: "Pending Information" (gathering_info phase)
+3. **When AI STARTS giving solution steps: IMMEDIATELY change to "In Progress"** (providing_solutions phase)
+4. When user confirms issue resolved: "Resolved" (resolution phase)
+5. When solutions don't work + needs admin review: "Pending Admin Review" (NOT "Escalated")
+
+**PHASE TRANSITIONS:**
+- gathering_info → providing_solutions: when AI is about to give first solution step
+- providing_solutions → resolution: after ALL solution steps provided and user feedback received
+- resolution → Pending Admin Review: if issue not resolved after all steps
+
+**KEY RULES:**
+- is_farewell: true if user says goodbye, bye, thanks, done, no more questions, exit, quit, etc.
+- is_off_topic: true if user response unrelated to current IT issue
 - is_it_incident: true for genuine IT problems (computer, software, network, email, hardware, system errors)
 - should_search_kb: true only if is_it_incident AND not already searched
-- new_status: determine based on phase and conversation flow
-- new_phase transitions: gathering_info → providing_solutions → resolution
+- needs_escalation: true when solutions exhausted and issue persists - set status to "Pending Admin Review"
+- **IMPORTANT: Detect if AI response contains solution steps, troubleshooting actions, or fix instructions (not just questions)**
+- If AI is providing solution/troubleshooting in response: new_phase should be "providing_solutions", new_status should be "In Progress"
+- If AI is only gathering information: keep phase as "gathering_info"
 """
 
         metadata_response = await asyncio.get_event_loop().run_in_executor(
@@ -250,11 +275,24 @@ LOGIC RULES:
                 await create_incident(incident_data)
                 logger.info(f"Created incident {incident_id} with status {session['status']}")
         
-        # Update session state from metadata
-        if metadata.get('new_status'):
+        # Update session state from metadata with proper phase/status management
+        # CRITICAL: When phase changes to providing_solutions, status MUST be "In Progress"
+        if metadata.get('new_phase') == 'providing_solutions':
+            session['phase'] = 'providing_solutions'
+            session['status'] = 'In Progress'
+        elif metadata.get('new_status') and metadata.get('new_phase'):
             session['status'] = metadata['new_status']
-        if metadata.get('new_phase'):
             session['phase'] = metadata['new_phase']
+        elif metadata.get('new_status'):
+            session['status'] = metadata['new_status']
+        if metadata.get('new_phase') and metadata.get('new_phase') != 'providing_solutions':
+            session['phase'] = metadata['new_phase']
+        
+        # Handle escalation: convert "Escalated" to "Pending Admin Review"
+        if session['status'] == 'Escalated':
+            session['status'] = 'Pending Admin Review'
+            session['phase'] = 'gathering_info'
+        
         if 'info_gathered' in metadata:
             session['required_info_gathered'] = metadata['info_gathered']
         if 'all_steps_done' in metadata:
