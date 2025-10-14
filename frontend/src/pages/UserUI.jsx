@@ -54,7 +54,7 @@ function UserUI() {
         const { response: aiResponse, incident_id, status, show_incident_info } = response.data;
 
         // Update incident info if provided - only when show_incident_info is true
-        if (incident_id && show_incident_info) {
+        if (incident_id) {
             setIncidentInfo({ 
                 id: incident_id, 
                 status: status,
@@ -195,15 +195,6 @@ function UserUI() {
           >
             New Chat
           </button>
-          {conversationActive && (
-            <button 
-              className="help-button"
-              disabled={isLoading}
-              title="Get help"
-            >
-              More Info
-            </button>
-          )}
         </div>
 
         <div className="session-info">
