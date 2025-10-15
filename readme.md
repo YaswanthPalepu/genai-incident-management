@@ -227,4 +227,3 @@ The frontend application will open in your browser, typically at `http://localho
 ---
 
 Feel free to contribute, open issues, or suggest improvements!
-```
