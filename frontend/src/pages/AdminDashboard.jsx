@@ -1,12 +1,10 @@
-// frontend/src/pages/AdminDashboard.jsx - REFACTORED (Key sections)
 import React, { useState, useEffect } from 'react';
 import {
   getAllIncidents,
   getIncidentDetails,
   updateIncidentStatus,
   getKnowledgeBaseContent,
-  updateKnowledgeBase,
-  getAdminStats
+  updateKnowledgeBase
 } from '../services/api';
 
 function AdminDashboard({ setAuth }) {
@@ -18,12 +16,10 @@ function AdminDashboard({ setAuth }) {
   const [kbMessage, setKbMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     fetchIncidents();
     fetchKbContent();
-    fetchStats();
   }, []);
 
   const fetchIncidents = async () => {
@@ -45,15 +41,6 @@ function AdminDashboard({ setAuth }) {
       setKbContent(response.data.kb_content);
     } catch (error) {
       console.error('Error fetching KB content:', error);
-    }
-  };
-
-  const fetchStats = async () => {
-    try {
-      const response = await getAdminStats();
-      setStats(response.data.stats);
-    } catch (error) {
-      console.error('Error fetching stats:', error);
     }
   };
 
@@ -111,11 +98,9 @@ function AdminDashboard({ setAuth }) {
 
   const getStatusColor = (status) => {
     const colors = {
-      'New': '#6c757d',
       'Pending Information': '#ffa726',
       'In Progress': '#42a5f5',
       'Resolved': '#66bb6a',
-      'Open': '#ff7043',
       'Pending Admin Review': '#d32f2f'
     };
     return colors[status] || '#78909c';
@@ -130,21 +115,6 @@ function AdminDashboard({ setAuth }) {
             <p>Manage incidents and knowledge base</p>
           </div>
         </div>
-
-        {stats && (
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-number">{stats.total_incidents}</div>
-              <div className="stat-label">Total Incidents</div>
-            </div>
-            {Object.entries(stats.by_status).map(([status, count]) => (
-              <div key={status} className="stat-card">
-                <div className="stat-number">{count}</div>
-                <div className="stat-label">{status}</div>
-              </div>
-            ))}
-          </div>
-        )}
 
         <div className="admin-dashboard-layout">
           <div className="kb-editor-section">
@@ -205,12 +175,10 @@ function AdminDashboard({ setAuth }) {
                   className="status-filter"
                 >
                   <option value="">All Status</option>
-                  <option value="New">New</option>
                   <option value="Pending Information">Pending Information</option>
+                  <option value="Pending Admin Review">Pending Admin Review</option>
                   <option value="In Progress">In Progress</option>
                   <option value="Resolved">Resolved</option>
-                  <option value="Open">Open</option>
-                  <option value="Pending Admin Review">Pending Admin Review</option>
                 </select>
                 <button 
                   onClick={fetchIncidents} 
@@ -322,12 +290,10 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
           <div className="status-select">
             <strong>Update Status:</strong>
             <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
-              <option value="New">New</option>
               <option value="Pending Information">Pending Information</option>
+              <option value="Pending Admin Review">Pending Admin Review</option>
               <option value="In Progress">In Progress</option>
               <option value="Resolved">Resolved</option>
-              <option value="Open">Open</option>
-              <option value="Pending Admin Review">Pending Admin Review</option>
             </select>
             <button onClick={handleSaveStatus} className="update-status-btn">
               Update

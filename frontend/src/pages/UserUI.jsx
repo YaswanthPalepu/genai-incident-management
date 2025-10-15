@@ -1,4 +1,3 @@
-// frontend/src/pages/UserUI.jsx - REFACTORED
 import React, { useState, useEffect } from 'react';
 import { chatWithAI, endSession } from '../services/api';
 import ChatWindow from '../components/ChatWindow';
@@ -53,7 +52,6 @@ function UserUI() {
         const response = await chatWithAI(sessionId, text.trim());
         const { response: aiResponse, incident_id, status, show_incident_info } = response.data;
 
-        // Update incident info if provided - only when show_incident_info is true
         if (incident_id) {
             setIncidentInfo({ 
                 id: incident_id, 
@@ -61,14 +59,12 @@ function UserUI() {
                 kb_reference: response.data.kb_reference || null
             });
         } else if (incident_id) {
-            // Update status only without forcing the info bar to show
             setIncidentInfo(prev => ({ 
                 ...prev, 
                 status: status 
             }));
         }
 
-        // Add AI response
         const aiMessage = {
             id: Date.now() + 1,
             sender: 'AI',
@@ -94,6 +90,7 @@ function UserUI() {
         setIsLoading(false);
     }
   };
+
   const handleEndSession = async () => {
     if (sessionId) {
       try {
@@ -131,11 +128,9 @@ function UserUI() {
 
   const getStatusColor = (status) => {
     const colors = {
-      'New': '#6c757d',
       'Pending Information': '#ffa726',
       'In Progress': '#42a5f5',
       'Resolved': '#66bb6a',
-      'Open': '#ff7043',
       'Pending Admin Review': '#d32f2f'
     };
     return colors[status] || '#78909c';
@@ -185,16 +180,6 @@ function UserUI() {
             isLoading={isLoading}
             placeholder="Describe your IT issue..."
           />
-        </div>
-
-        <div className="quick-actions">
-          <button 
-            className="new-conversation-btn"
-            onClick={handleNewConversation}
-            title="Start new conversation"
-          >
-            New Chat
-          </button>
         </div>
 
         <div className="session-info">

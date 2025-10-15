@@ -1,8 +1,12 @@
+// frontend/src/components/Header.jsx - FIXED
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 function Header({ onNewConversation, conversationActive }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isUserInterface = location.pathname === '/user';
+  const isAdminInterface = location.pathname === '/admin';
 
   return (
     <div className="header">
@@ -16,21 +20,30 @@ function Header({ onNewConversation, conversationActive }) {
         </div>
         
         <div className="header-right">
-          <button 
-            className="nav-button user-button"
-            onClick={() => navigate('/user')}
-            title="User Interface"
-          >
-            👤 User
-          </button>
-          <button 
-            className="nav-button admin-button"
-            onClick={() => navigate('/admin/login')}
-            title="Admin Dashboard"
-          >
-            ⚙️ Admin
-          </button>
-          {conversationActive && (
+          {/* Only show User button in Admin interface */}
+          {isAdminInterface && (
+            <button 
+              className="nav-button user-button"
+              onClick={() => navigate('/user')}
+              title="User Interface"
+            >
+              👤 User
+            </button>
+          )}
+          
+          {/* Only show Admin button in Login page, not in User interface */}
+          {!isUserInterface && !isAdminInterface && (
+            <button 
+              className="nav-button admin-button"
+              onClick={() => navigate('/admin/login')}
+              title="Admin Dashboard"
+            >
+              ⚙️ Admin
+            </button>
+          )}
+          
+          {/* Show New Chat only once in User interface */}
+          {isUserInterface && conversationActive && (
             <button 
               className="new-chat-button"
               onClick={onNewConversation}
