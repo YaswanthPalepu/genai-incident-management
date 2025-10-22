@@ -99,7 +99,7 @@ function AdminDashboard({ setAuth }) {
   const getStatusColor = (status) => {
     const colors = {
       'Pending Information': '#ffa726',
-      'In Progress': '#42a5f5',
+      'Open': '#42a5f5', // New color for "Open"
       'Resolved': '#66bb6a',
       'Pending Admin Review': '#d32f2f'
     };
@@ -177,7 +177,7 @@ function AdminDashboard({ setAuth }) {
                   <option value="">All Status</option>
                   <option value="Pending Information">Pending Information</option>
                   <option value="Pending Admin Review">Pending Admin Review</option>
-                  <option value="In Progress">In Progress</option>
+                  <option value="Open">Open</option> {/* New status option */}
                   <option value="Resolved">Resolved</option>
                 </select>
                 <button 
@@ -292,7 +292,7 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
             <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
               <option value="Pending Information">Pending Information</option>
               <option value="Pending Admin Review">Pending Admin Review</option>
-              <option value="In Progress">In Progress</option>
+              <option value="Open">Open</option> {/* New status option */}
               <option value="Resolved">Resolved</option>
             </select>
             <button onClick={handleSaveStatus} className="update-status-btn">

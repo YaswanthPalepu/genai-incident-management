@@ -24,7 +24,7 @@ def get_llm():
     global llm
     if llm is None:
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             google_api_key=GOOGLE_API_KEY,
             temperature=0.1
         )
@@ -50,7 +50,7 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
             'required_info_gathered': False,
             'all_steps_completed': False,
             'previous_status': 'No Incident',
-            'phase': None,  # 'gathering_info', 'providing_solutions', 'resolution'
+            'phase': None, 
         }
     
     session = _session_data[session_id]
@@ -67,6 +67,7 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
     
     # ========== CONSOLIDATED LLM CALL #1: ANALYZE QUERY & PROVIDE RESPONSE ==========
     # Single LLM call that does: farewell check, off-topic detection, response generation, and state analysis
+    # UPDATED: The instructions here are crucial for the LLM's response generation logic.
     system_prompt = f"""You are an intelligent IT Incident Management AI Assistant.
 
 STRICT RULES:
@@ -88,12 +89,6 @@ CURRENT SESSION STATE:
 KNOWLEDGE BASE CONTENT (if available):
 {session['kb_chunk']['content'] if session['kb_chunk'] else 'No KB content'}
 
-CRITICAL: If status is "Pending Admin Review" (NO KB MATCH):
-- **NEVER provide solutions, troubleshooting steps, or fixes**
-- **ONLY ask questions to understand the issue better**
-- Example of WRONG response: "Let's try restarting your computer..."
-- Example of CORRECT response: "What happens when you try to open it?"
-
 RESPONSE INSTRUCTIONS:
 
 1. **ANALYZE THE QUERY** (in your thinking):
@@ -110,22 +105,22 @@ RESPONSE INSTRUCTIONS:
 4. **IF NON-IT QUERY**: Reject with: "I specialize only in IT incident management and cannot help with general questions. Please describe any IT issues you're experiencing."
 
 5. **IF IT INCIDENT WITHOUT KB MATCH** (Status: "Pending Admin Review"):
-   - ONLY gather information - do NOT provide solutions
-   - Ask ONE question at a time about the issue
-   - Be conversational and natural
-   - After gathering sufficient info (4-5 questions answered), inform user: "I've gathered all the necessary information. Let me submit this to our admin team for review. They will investigate and provide a solution."
-   - Then escalate (status becomes "Pending Admin Review" for admin review)
-
-6. **IF IT INCIDENT WITH KB MATCH** (Status: "Pending Information" or "In Progress"):
-   - **Phase: gathering_info** - Ask required info from KB one at a time (don't provide solutions yet)
-   - **Phase: providing_solutions** - Once all required info gathered, provide solution steps one by one (each step in separate response)
-   - **Phase: resolution** - Ask if issue is resolved. If yes → "Resolved". If no → escalate to "Pending Admin Review"
-   - Wait for user response before moving forward
+   - ONLY gather information - do NOT provide solutions.
+   - Ask ONE question at a time about the issue to understand it better.
+   - After gathering sufficient info (e.g., after 2-3 questions are answered), inform user: "Thank you for providing the details. I have forwarded this incident to our admin team for review. They will contact you shortly with a solution."
+   - Then the system will set the status to "Pending Admin Review".
+   - **Ensure you DO NOT ask for information already provided in the `CONVERSATION HISTORY`.**
+6. **IF IT INCIDENT WITH KB MATCH** (Status: "Pending Information"):
+   - **Phase: gathering_info** - Ask for required information from the KB one at a time.
+   - Once ALL required information from the KB has been gathered, inform the user: "Thank you for providing the necessary information. I have created an incident, and our admin team will contact you shortly with the solution."
+   - Then the system will set the status to "Open". **DO NOT provide solution steps from the KB to the user.**
+   - Wait for user response before moving forward.
+   - **Ensure you DO NOT ask for information already provided in the `CONVERSATION HISTORY`.**
 
 BE CONVERSATIONAL, EMPATHETIC, AND NATURAL. Ask ONE question at a time."""
 
     try:
-        # CALL 1: Generate response
+        # CALL 1: Generate response based on current state and prompt
         response = await asyncio.get_event_loop().run_in_executor(
             executor,
             lambda: llm_instance.invoke([
@@ -146,6 +141,7 @@ BE CONVERSATIONAL, EMPATHETIC, AND NATURAL. Ask ONE question at a time."""
         
         # ========== CONSOLIDATED LLM CALL #2: ANALYZE & EXTRACT METADATA ==========
         # Single call that does: incident detection, off-topic check, farewell check, and state updates
+        # UPDATED: Status and phase transitions now align with "Open" status.
         analysis_prompt = f"""Analyze the conversation and extract metadata. Return ONLY valid JSON (no markdown, no extra text).
 
 USER LATEST MESSAGE: "{query}"
@@ -157,6 +153,8 @@ CURRENT SESSION:
 - Phase: {session['phase']}
 - Info Gathered: {session['required_info_gathered']}
 - KB Found: {session['kb_chunk'] is not None}
+- Conversation length: {len(session['conversation'])}
+- Has KB chunk been available previously in this session?: {session['kb_chunk'] is not None}
 
 EXTRACT (respond with ONLY JSON object, nothing else):
 {{
@@ -164,8 +162,8 @@ EXTRACT (respond with ONLY JSON object, nothing else):
     "is_off_topic": true/false,
     "is_it_incident": true/false,
     "should_search_kb": true/false,
-    "new_status": "Pending Admin Review" | "Pending Information" | "In Progress" | "Resolved",
-    "new_phase": "gathering_info" | "providing_solutions" | "resolution",
+    "new_status": "Pending Admin Review" | "Pending Information" | "Open" | "Resolved" | null,
+    "new_phase": "gathering_info" | "resolution" | null,
     "info_gathered": true/false,
     "all_steps_done": true/false,
     "needs_escalation": true/false,
@@ -174,27 +172,34 @@ EXTRACT (respond with ONLY JSON object, nothing else):
 
 CRITICAL STATUS & PHASE RULES:
 
-**STATUS TRANSITIONS:**
-1. When KB not found: "Pending Admin Review" (gathering_info phase - only ask questions)
-2. When KB found + gathering info: "Pending Information" (gathering_info phase)
-3. **When AI STARTS giving solution steps: IMMEDIATELY change to "In Progress"** (providing_solutions phase)
-4. When user confirms issue resolved: "Resolved" (resolution phase)
-5. When solutions don't work + needs admin review: "Pending Admin Review" (NOT "Escalated")
+**STATUS TRANSITIONS (MOST IMPORTANT):**
+
+1. **New IT Incident (No KB Found):** If `is_it_incident` is true, `incident_created` is false, and `KB Found` is false: `new_status` should be "Pending Admin Review", `new_phase` should be "gathering_info".
+2. **New IT Incident (KB Found):** If `is_it_incident` is true, `incident_created` is false, and `KB Found` is true: `new_status` should be "Pending Information", `new_phase` should be "gathering_info".
+3. **KB Matched Incident - Info Gathering Complete:** If `AI RESPONSE` *explicitly states* "Thank you for providing the necessary information. I have created an incident, and our admin team will contact you shortly with the solution." (This indicates completion of gathering info for a KB-matched incident):
+   - `info_gathered` MUST be true.
+   - `all_steps_done` MUST be true.
+   - `new_status` MUST be "Open".
+   - `new_phase` should be "resolution" or `null`.
+4. **No KB Matched Incident - Info Gathering Complete:** If `AI RESPONSE` *explicitly states* "Thank you for providing the details. I have forwarded this incident to our admin team for review. They will contact you shortly with a solution." (This indicates completion of gathering info for a non-KB-matched incident):
+   - `info_gathered` MUST be true.
+   - `all_steps_done` MUST be true.
+   - `new_status` MUST be "Pending Admin Review".
+   - `new_phase` should be "resolution" or `null`.
+5. **Issue Explicitly Resolved:** If the `USER LATEST MESSAGE` indicates the issue is resolved (e.g., "It's fixed", "Problem solved", "I figured it out"): `new_status` should be "Resolved".
+6. **No Status Change:** If none of the above conditions are met for `new_status`, it should be `null` (allowing the system to maintain the current status).
 
 **PHASE TRANSITIONS:**
-- gathering_info → providing_solutions: when AI is about to give first solution step
-- providing_solutions → resolution: after ALL solution steps provided and user feedback received
-- resolution → Pending Admin Review: if issue not resolved after all steps
+- If `new_status` becomes "Pending Information" or "Pending Admin Review" from `null` or 'No Incident': `new_phase` should be "gathering_info".
+- If `info_gathered` becomes true and `new_status` is "Open" or "Pending Admin Review": `new_phase` should be "resolution" or `null`.
 
 **KEY RULES:**
 - is_farewell: true if user says goodbye, bye, thanks, done, no more questions, exit, quit, etc.
 - is_off_topic: true if user response unrelated to current IT issue
-- is_it_incident: true for genuine IT problems (computer, software, network, email, hardware, system errors)
-- should_search_kb: true only if is_it_incident AND not already searched
-- needs_escalation: true when solutions exhausted and issue persists - set status to "Pending Admin Review"
-- **IMPORTANT: Detect if AI response contains solution steps, troubleshooting actions, or fix instructions (not just questions)**
-- If AI is providing solution/troubleshooting in response: new_phase should be "providing_solutions", new_status should be "In Progress"
-- If AI is only gathering information: keep phase as "gathering_info"
+- is_it_incident: true for genuine IT problems (computer, software, network, email, hardware, system errors), and false for greetings, farewells, or general questions.
+- should_search_kb: true only if `is_it_incident` is true AND `session['kb_searched']` is false AND `session['incident_created']` is false.
+- needs_escalation: true when `new_status` is "Open" or "Pending Admin Review" because the incident has been escalated/forwarded.
+- `new_status` should be `null` if no explicit status change is detected.
 """
 
         metadata_response = await asyncio.get_event_loop().run_in_executor(
@@ -229,15 +234,20 @@ CRITICAL STATUS & PHASE RULES:
                 'all_steps_done': session['all_steps_completed']
             }
         
-        logger.info(f"Metadata extracted: Farewell={metadata.get('is_farewell')}, Off-topic={metadata.get('is_off_topic')}, IT={metadata.get('is_it_incident')}")
+        logger.info(f"Metadata extracted: {metadata}")
         
         # ========== HANDLE METADATA RESULTS ==========
         
         # Handle KB search if needed
-        if metadata.get('should_search_kb') and not session['kb_searched']:
+        # Condition changed: `incident_created` added to prevent re-searching KB for ongoing incidents.
+        if metadata.get('should_search_kb') and not session['kb_searched'] and not session['incident_created']:
             logger.info("Searching KB for IT incident")
             search_results = hybrid_search_kb(query, n_results=2)
             kb_match_found = search_results and search_results[0]['similarity'] > 0.3
+            
+            # Determine initial status based on KB match
+            initial_status = 'Pending Information' if kb_match_found else 'Pending Admin Review'
+            initial_phase = 'gathering_info' # Always starts in gathering info phase for new incidents
             
             if kb_match_found:
                 session['kb_chunk'] = {
@@ -245,18 +255,16 @@ CRITICAL STATUS & PHASE RULES:
                     'content': search_results[0]['content'],
                     'similarity': search_results[0]['similarity']
                 }
-                session['status'] = 'Pending Information'
-                session['phase'] = 'gathering_info'
                 logger.info(f"KB match found: {session['kb_chunk']['kb_id']}")
             else:
-                session['status'] = 'Pending Admin Review'
-                session['phase'] = 'gathering_info'
                 session['kb_chunk'] = None
                 logger.info("No KB match found")
             
+            session['status'] = initial_status
+            session['phase'] = initial_phase
             session['kb_searched'] = True
             
-            # Create incident
+            # Create incident only if it's a new IT incident and not already created
             if not session['incident_created']:
                 incident_id = f"INC{datetime.now().strftime('%Y%m%d%H%M%S')}{str(uuid.uuid4())[:4].upper()}"
                 session['incident_id'] = incident_id
@@ -274,36 +282,44 @@ CRITICAL STATUS & PHASE RULES:
                 
                 await create_incident(incident_data)
                 logger.info(f"Created incident {incident_id} with status {session['status']}")
+
+        # Track status change for frontend
+        status_changed = session['previous_status'] != metadata.get('new_status', session['status'])
         
-        # Update session state from metadata with proper phase/status management
-        # CRITICAL: When phase changes to providing_solutions, status MUST be "In Progress"
-        if metadata.get('new_phase') == 'providing_solutions':
-            session['phase'] = 'providing_solutions'
-            session['status'] = 'In Progress'
-        elif metadata.get('new_status') and metadata.get('new_phase'):
+        # Update session state based on metadata, respecting the new flow
+        # This part handles the transition to "Open" status.
+        if metadata.get('new_status'):
             session['status'] = metadata['new_status']
+        if metadata.get('new_phase'):
             session['phase'] = metadata['new_phase']
-        elif metadata.get('new_status'):
-            session['status'] = metadata['new_status']
-        if metadata.get('new_phase') and metadata.get('new_phase') != 'providing_solutions':
-            session['phase'] = metadata['new_phase']
-        
-        # Handle escalation: convert "Escalated" to "Pending Admin Review"
-        if session['status'] == 'Escalated':
+
+        if metadata.get('info_gathered') and session['status'] == 'Pending Information':
+            # If all required info from KB is gathered and it was a KB match scenario,
+            # transition to "Open".
+            session['required_info_gathered'] = True
+            session['all_steps_completed'] = True # All steps (info gathering) done.
+            session['status'] = 'Open' # New status: Open
+            session['phase'] = 'resolution' # Phase can be resolution or null after info gathering.
+            logger.info(f"KB matched incident {session.get('incident_id')} moved to 'Open' status after info gathering.")
+
+        elif metadata.get('info_gathered') and session['status'] == 'Pending Admin Review':
+            # If info gathered for a non-KB matched incident, keep it Pending Admin Review
+            session['required_info_gathered'] = True
+            session['all_steps_completed'] = True # All steps (info gathering) done.
             session['status'] = 'Pending Admin Review'
-            session['phase'] = 'gathering_info'
+            session['phase'] = 'resolution'
+            logger.info(f"No KB matched incident {session.get('incident_id')} status remains 'Pending Admin Review' after info gathering.")
         
-        if 'info_gathered' in metadata:
-            session['required_info_gathered'] = metadata['info_gathered']
-        if 'all_steps_done' in metadata:
-            session['all_steps_completed'] = metadata['all_steps_done']
-        
-        # Update incident in DB
+        # If the user states the issue is resolved, update the status
+        if metadata.get('new_status') == 'Resolved':
+            session['status'] = 'Resolved'
+            session['phase'] = 'resolution'
+
+        # Update incident in DB if an incident exists
         incident_id = session.get('incident_id')
         if incident_id:
-            await update_incident_in_db(incident_id, session['conversation'], session['status'])
+            await update_incident_in_db(incident_id, session['conversation'], session['status'], session['kb_chunk'])
         
-        status_changed = session['previous_status'] != session['status']
         session['previous_status'] = session['status']
         
         return response_text, session.get('incident_id'), session['status'], status_changed
@@ -315,18 +331,18 @@ CRITICAL STATUS & PHASE RULES:
         error_message = {
             'sender': 'AI',
             'text': error_msg,
-            'timestamp': datetime.utcnow()
+            'timestamp': datetime.now(pytz.UTC).isoformat()
         }
         session['conversation'].append(error_message)
         
         incident_id = session.get('incident_id')
         if incident_id:
-            await update_incident_in_db(incident_id, session['conversation'], 'Error')
+            await update_incident_in_db(incident_id, session['conversation'], 'Error', session['kb_chunk'])
         
         return error_msg, None, "Error", False
 
-async def update_incident_in_db(incident_id: str, full_conversation: list, status: str):
-    """Update incident in MongoDB with full conversation"""
+async def update_incident_in_db(incident_id: str, full_conversation: list, status: str, kb_chunk: dict = None):
+    """Update incident in MongoDB with full conversation and KB reference if available"""
     try:
         current_incident = await get_incident(incident_id)
         
@@ -334,8 +350,12 @@ async def update_incident_in_db(incident_id: str, full_conversation: list, statu
             update_data = {
                 "status": status,
                 "additional_info": full_conversation,
-                "updated_on": datetime.utcnow()
+                "updated_on": datetime.now(pytz.UTC).isoformat()
             }
+            if kb_chunk:
+                update_data["kb_reference"] = f"KB_{kb_chunk['kb_id']}"
+            else:
+                update_data["kb_reference"] = "No KB Match"
             
             await update_incident(incident_id, update_data)
             logger.info(f"Updated incident {incident_id} with status {status}")
@@ -357,7 +377,8 @@ def get_session_status(session_id: str) -> str:
 
 async def clear_session_data(session_id: str):
     """Clear session data"""
-    if session_id in _conversation_history:
+    # Note: _conversation_history is not used directly but keep the check.
+    if session_id in _conversation_history: 
         del _conversation_history[session_id]
     if session_id in _session_data:
         del _session_data[session_id]

@@ -58,7 +58,7 @@ function UserUI() {
                 status: status,
                 kb_reference: response.data.kb_reference || null
             });
-        } else if (incident_id) {
+        } else if (incident_id) { // Only update status if incident_id already exists in state
             setIncidentInfo(prev => ({ 
                 ...prev, 
                 status: status 
@@ -129,7 +129,7 @@ function UserUI() {
   const getStatusColor = (status) => {
     const colors = {
       'Pending Information': '#ffa726',
-      'In Progress': '#42a5f5',
+      'Open': '#42a5f5', // New color for "Open"
       'Resolved': '#66bb6a',
       'Pending Admin Review': '#d32f2f'
     };

@@ -3,7 +3,7 @@ from models import UserQuery, SessionEndRequest
 from services.llm_service import (
     handle_user_query,
     get_session_incident_id,
-    get_session_status,
+    get_session_status as get_llm_service_session_status,
     clear_session_data
 )
 import logging
@@ -72,7 +72,7 @@ async def end_session(session_data: SessionEndRequest):
     
     # Get final incident status before clearing
     incident_id = get_session_incident_id(session_id)
-    status = get_session_status(session_id)
+    status = get_llm_service_session_status(session_id)
     
     await clear_session_data(session_id)
     
@@ -88,7 +88,7 @@ async def end_session(session_data: SessionEndRequest):
 async def get_session_status(session_id: str):
     """Get current session status"""
     incident_id = get_session_incident_id(session_id)
-    status = get_session_status(session_id)
+    status = get_llm_service_session_status(session_id)
     
     return {
         "success": True,
