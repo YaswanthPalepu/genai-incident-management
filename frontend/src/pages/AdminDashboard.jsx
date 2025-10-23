@@ -1,3 +1,4 @@
+// frontend/src/components/AdminDashboard.jsx - UPDATED WITH COLLECTED_INFORMATION
 import React, { useState, useEffect } from 'react';
 import {
   getAllIncidents,
@@ -54,12 +55,14 @@ function AdminDashboard({ setAuth }) {
     }
   };
 
-  const handleStatusChange = async (incidentId, newStatus) => {
+  const handleStatusChange = async (incidentId, newStatus, adminMessage) => {
     try {
-      await updateIncidentStatus(incidentId, newStatus);
+      await updateIncidentStatus(incidentId, newStatus, null, adminMessage);
       fetchIncidents();
       if (selectedIncident && selectedIncident.incident_id === incidentId) {
-        setSelectedIncident(prev => ({ ...prev, status: newStatus }));
+        // Refresh the selected incident to show updated admin messages
+        const response = await getIncidentDetails(incidentId);
+        setSelectedIncident(response.data.incident);
       }
     } catch (error) {
       console.error('Error updating incident status:', error);
@@ -99,7 +102,7 @@ function AdminDashboard({ setAuth }) {
   const getStatusColor = (status) => {
     const colors = {
       'Pending Information': '#ffa726',
-      'Open': '#42a5f5', // New color for "Open"
+      'Open': '#42a5f5',
       'Resolved': '#66bb6a',
       'Pending Admin Review': '#d32f2f'
     };
@@ -177,7 +180,7 @@ function AdminDashboard({ setAuth }) {
                   <option value="">All Status</option>
                   <option value="Pending Information">Pending Information</option>
                   <option value="Pending Admin Review">Pending Admin Review</option>
-                  <option value="Open">Open</option> {/* New status option */}
+                  <option value="Open">Open</option>
                   <option value="Resolved">Resolved</option>
                 </select>
                 <button 
@@ -260,9 +263,31 @@ function AdminDashboard({ setAuth }) {
 
 function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColor }) {
   const [newStatus, setNewStatus] = useState(incident.status);
+  const [adminMessage, setAdminMessage] = useState('');
+  const [showMessageInput, setShowMessageInput] = useState(false);
 
   const handleSaveStatus = () => {
-    onStatusChange(incident.incident_id, newStatus);
+    if (newStatus !== incident.status) {
+      if (!adminMessage.trim()) {
+        alert('Please provide a message describing this status change.');
+        return;
+      }
+      onStatusChange(incident.incident_id, newStatus, adminMessage);
+      setAdminMessage('');
+      setShowMessageInput(false);
+    } else {
+      alert('Status has not changed. Please select a different status.');
+    }
+  };
+
+  const handleStatusSelectChange = (e) => {
+    setNewStatus(e.target.value);
+    if (e.target.value !== incident.status) {
+      setShowMessageInput(true);
+    } else {
+      setShowMessageInput(false);
+      setAdminMessage('');
+    }
   };
 
   return (
@@ -278,7 +303,7 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
           </div>
           
           <div className="summary-item">
-            <strong>Status:</strong>
+            <strong>Current Status:</strong>
             <span 
               className="status-badge"
               style={{ backgroundColor: getStatusColor(incident.status) }}
@@ -287,16 +312,34 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
             </span>
           </div>
 
-          <div className="status-select">
+          <div className="status-update-section">
             <strong>Update Status:</strong>
-            <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
+            <select value={newStatus} onChange={handleStatusSelectChange} className="status-select-input">
               <option value="Pending Information">Pending Information</option>
               <option value="Pending Admin Review">Pending Admin Review</option>
-              <option value="Open">Open</option> {/* New status option */}
+              <option value="Open">Open</option>
               <option value="Resolved">Resolved</option>
             </select>
-            <button onClick={handleSaveStatus} className="update-status-btn">
-              Update
+            
+            {showMessageInput && (
+              <div className="admin-message-input-container">
+                <label><strong>Admin Message (Required):</strong></label>
+                <textarea
+                  value={adminMessage}
+                  onChange={(e) => setAdminMessage(e.target.value)}
+                  placeholder="Enter a message describing this status change..."
+                  className="admin-message-textarea"
+                  rows="3"
+                />
+              </div>
+            )}
+            
+            <button 
+              onClick={handleSaveStatus} 
+              className="update-status-btn"
+              disabled={newStatus === incident.status}
+            >
+              Update Status
             </button>
           </div>
 
@@ -318,20 +361,55 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
           </div>
         </div>
 
-        <h4>Conversation History:</h4>
-        <div className="modal-conversation-history">
-          {incident.additional_info && incident.additional_info.length > 0 ? (
-            incident.additional_info.map((msg, index) => (
-              <div key={index} className={`conversation-message ${msg.sender.toLowerCase()}`}>
-                <div className="message-header">
-                  <strong>{msg.sender}:</strong>
-                  <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
+        {/* Admin Messages History */}
+        {incident.admin_messages && incident.admin_messages.length > 0 && (
+          <div className="admin-messages-section">
+            <h4>📝 Admin Status Change History:</h4>
+            <div className="admin-messages-list">
+              {incident.admin_messages.map((msg, index) => (
+                <div key={index} className="admin-message-item">
+                  <div className="admin-message-header">
+                    <span className="admin-message-time">
+                      {new Date(msg.timestamp).toLocaleString()}
+                    </span>
+                    <span className="admin-message-status-change">
+                      <span style={{ color: getStatusColor(msg.old_status) }}>
+                        {msg.old_status}
+                      </span>
+                      {' → '}
+                      <span style={{ color: getStatusColor(msg.new_status) }}>
+                        {msg.new_status}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="admin-message-content">
+                    {msg.message}
+                  </div>
                 </div>
-                <div className="message-content">{msg.text}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Collected Information - Q&A pairs only */}
+        <h4>📋 Collected Information (Q&A):</h4>
+        <div className="collected-information-section">
+          {incident.collected_information && incident.collected_information.length > 0 ? (
+            incident.collected_information.map((qa, index) => (
+              <div key={index} className="qa-pair">
+                <div className="qa-question">
+                  <strong>Q{index + 1}:</strong> {qa.question}
+                </div>
+                <div className="qa-answer">
+                  <strong>A:</strong> {qa.answer}
+                </div>
+                <div className="qa-timestamp">
+                  {new Date(qa.timestamp).toLocaleString()}
+                </div>
               </div>
             ))
           ) : (
-            <p>No conversation history.</p>
+            <p className="no-data">No information collected yet.</p>
           )}
         </div>
       </div>

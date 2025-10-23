@@ -1,4 +1,4 @@
-// frontend/src/services/api.js - REFACTORED
+// frontend/src/services/api.js - UPDATED WITH ADMIN MESSAGE SUPPORT
 import axios from 'axios';
 
 const BASE_URL = 'http://localhost:8000/api';
@@ -29,10 +29,13 @@ export const getIncidentDetails = (incidentId) => {
   return api.get(`/admin/incidents/${incidentId}`);
 };
 
-export const updateIncidentStatus = (incidentId, status, kb_reference = null) => {
+export const updateIncidentStatus = (incidentId, status, kb_reference = null, admin_message = null) => {
   const updateData = { status };
   if (kb_reference) {
     updateData.kb_reference = kb_reference;
+  }
+  if (admin_message) {
+    updateData.admin_message = admin_message;
   }
   return api.put(`/admin/incidents/${incidentId}`, updateData);
 };

@@ -861,6 +861,233 @@ h3 {
   }
 }
 
+/* Additional styles for collected_information and admin messages */
+
+/* Status Update Section */
+.status-update-section {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--background-light);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+}
+
+.status-update-section strong {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.status-select-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+  background: white;
+}
+
+.admin-message-input-container {
+  margin: 1rem 0;
+}
+
+.admin-message-input-container label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-dark);
+}
+
+.admin-message-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.admin-message-textarea:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.update-status-btn {
+  background: var(--success-color);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.3s ease;
+  font-weight: 500;
+}
+
+.update-status-btn:hover:not(:disabled) {
+  background: var(--success-hover-color);
+}
+
+.update-status-btn:disabled {
+  background: var(--secondary-color);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Admin Messages Section */
+.admin-messages-section {
+  margin: 2rem 0;
+  padding: 1rem;
+  background: #fff3cd;
+  border-left: 4px solid var(--warning-color);
+  border-radius: var(--radius);
+}
+
+.admin-messages-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--text-dark);
+  font-size: 1.1rem;
+}
+
+.admin-messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-message-item {
+  background: white;
+  padding: 12px 15px;
+  border-radius: var(--radius);
+  border: 1px solid #ffc107;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.admin-message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-message-time {
+  color: var(--secondary-color);
+  font-weight: 500;
+}
+
+.admin-message-status-change {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.admin-message-content {
+  color: var(--text-dark);
+  line-height: 1.5;
+  font-size: 0.95rem;
+  padding: 0.5rem 0;
+}
+
+/* Collected Information Section */
+.collected-information-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--background-light);
+  border-radius: var(--radius);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.qa-pair {
+  background: white;
+  padding: 15px;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  border-left: 4px solid var(--primary-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.qa-question {
+  margin-bottom: 0.75rem;
+  padding: 10px;
+  background: #e3f2fd;
+  border-radius: 6px;
+  color: var(--text-dark);
+  line-height: 1.5;
+}
+
+.qa-question strong {
+  color: var(--primary-color);
+  margin-right: 0.5rem;
+}
+
+.qa-answer {
+  margin-bottom: 0.5rem;
+  padding: 10px;
+  background: #f1f8e9;
+  border-radius: 6px;
+  color: var(--text-dark);
+  line-height: 1.5;
+}
+
+.qa-answer strong {
+  color: var(--success-color);
+  margin-right: 0.5rem;
+}
+
+.qa-timestamp {
+  font-size: 0.75rem;
+  color: var(--secondary-color);
+  text-align: right;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+.no-data {
+  text-align: center;
+  color: var(--secondary-color);
+  padding: 2rem;
+  font-style: italic;
+}
+
+/* Modal Scrollbar Styling */
+.collected-information-section::-webkit-scrollbar {
+  width: 8px;
+}
+
+.collected-information-section::-webkit-scrollbar-track {
+  background: var(--background-light);
+  border-radius: 4px;
+}
+
+.collected-information-section::-webkit-scrollbar-thumb {
+  background: var(--secondary-color);
+  border-radius: 4px;
+}
+
+.collected-information-section::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary-hover-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .admin-message-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .qa-pair {
+    padding: 12px;
+  }
+  
+  .status-update-section {
+    padding: 0.75rem;
+  }
+}
+
 /* Utility Classes */
 .text-center { text-align: center; }
 .text-left { text-align: left; }

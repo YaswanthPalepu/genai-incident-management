@@ -1,3 +1,4 @@
+# backend/services/llm_service.py - UPDATED WITH collected_information
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from config import GOOGLE_API_KEY
@@ -32,7 +33,7 @@ def get_llm():
 
 async def handle_user_query(query: str, session_id: str) -> tuple:
     """
-    Optimized query handler with CONSOLIDATED LLM calls
+    Optimized query handler with collected_information tracking
     """
     llm_instance = get_llm()
     
@@ -40,6 +41,7 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
     if session_id not in _session_data:
         _session_data[session_id] = {
             'conversation': [],
+            'collected_information': [],  # NEW: Track Q&A pairs only
             'kb_searched': False,
             'incident_created': False,
             'incident_id': None,
@@ -49,7 +51,7 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
             'previous_status': 'No Incident',
             'phase': None,
             'questions_asked_count': 0,
-            # 'last_question_asked': None, # REMOVED: No longer managing this in session state
+            'last_ai_question': None,  # NEW: Track last question asked
         }
     
     session = _session_data[session_id]
@@ -63,8 +65,6 @@ async def handle_user_query(query: str, session_id: str) -> tuple:
     session['conversation'].append(user_message)
     
     conversation_context = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in session['conversation'][-8:]])
-    
-    # NO pre-processing of last_ai_question here, LLM will infer from conversation_context
     
     # ========== CONSOLIDATED LLM CALL #1: ANALYZE QUERY & PROVIDE RESPONSE ==========
     system_prompt = f"""You are an intelligent IT Incident Management AI Assistant.
@@ -86,7 +86,6 @@ CURRENT SESSION STATE:
 - KB Match Found: {session['kb_chunk'] is not None}
 - Questions Asked So Far: {session['questions_asked_count']}
 - Info Gathered: {session['required_info_gathered']}
-# REMOVED: No longer providing 'Last Question Asked' from session state here
 
 KNOWLEDGE BASE CONTENT (if KB match found):
 {session['kb_chunk']['content'] if session['kb_chunk'] else 'No KB content - this is a non-KB incident'}
@@ -195,7 +194,8 @@ EXTRACT (respond with ONLY a JSON object):
     "is_it_incident": true/false,
     "should_search_kb": true/false,
     "asked_question": true/false,
-    // "question_text": "the actual question asked, or null", # REMOVED: No longer needed for session state
+    "question_text": "the actual question asked, or null",
+    "is_valid_answer": true/false,
     "info_gathering_complete": true/false,
     "issue_resolved_by_user": true/false,
     "reason": "brief reason"
@@ -220,17 +220,24 @@ CRITICAL RULES FOR EXTRACTION:
    - Status is "No Incident"
 
 5. **asked_question**: true if AI response ends with a question mark (?) and is asking the user for information about the IT incident
-   # REMOVED: No longer need to extract question_text here for session state
+6. **question_text**: Extract the EXACT question asked by the AI (the full question text). Set to null if no question was asked.
 
-6. **info_gathering_complete**: true ONLY if AI response contains one of these TWO EXACT phrases (word-for-word):
+7. **is_valid_answer**: true ONLY if ALL these conditions are met:
+   - An incident is active (Incident Created is true)
+   - The user's message is directly answering a previously asked question
+   - The answer is relevant to the IT incident (not a greeting, farewell, or off-topic)
+   - The answer provides meaningful information (not just "yes", "no", "ok" without context)
+   - This should be FALSE for: greetings, farewells, off-topic responses, incomplete answers
+
+8. **info_gathering_complete**: true ONLY if AI response contains one of these TWO EXACT phrases (word-for-word):
    - "Thank you for providing the details. I have forwarded this incident to our admin team for review. They will contact you shortly with a solution."
    - "Thank you for providing the necessary information. I have created an incident, and our admin team will contact you shortly with the solution."
    
    IMPORTANT: Must match EXACTLY - if AI used similar wording but not exact, this should be FALSE.
 
-7. **issue_resolved_by_user**: true if user explicitly states their issue is now fixed/resolved/working
+9. **issue_resolved_by_user**: true if user explicitly states their issue is now fixed/resolved/working
 
-8. **reason**: Brief explanation of what happened in this exchange"""
+10. **reason**: Brief explanation of what happened in this exchange"""
 
         metadata_response = await asyncio.get_event_loop().run_in_executor(
             executor,
@@ -259,18 +266,44 @@ CRITICAL RULES FOR EXTRACTION:
                 'is_it_incident': False,
                 'should_search_kb': False,
                 'asked_question': False,
-                # 'question_text': None, # REMOVED
+                'question_text': None,
+                'is_valid_answer': False,
                 'info_gathering_complete': False,
                 'issue_resolved_by_user': False
             }
         
         logger.info(f"Metadata extracted: {metadata}")
         
-        # Track if question was asked
-        if metadata.get('asked_question') and session['incident_created']:
-            session['questions_asked_count'] += 1
-            # REMOVED: No longer setting session['last_question_asked']
-            logger.info(f"Question asked. Total questions: {session['questions_asked_count']}")
+        # NEW: Track collected_information - only valid Q&A pairs
+        # --- Step 1: Check if the current query is an ANSWER to the LAST question ---
+        # This MUST run before Step 2 to use the question from the *previous* turn.
+        # This part only runs if an incident already exists.
+        if session['incident_created']:
+            question_that_was_asked = session.get('last_ai_question')
+            if question_that_was_asked:
+                # An answer is considered valid if:
+                # 1. Metadata explicitly says so (is_valid_answer: True). OR
+                # 2. A new question is being asked (implies the last answer was accepted). OR
+                # 3. Info gathering is now complete (implies the last answer was accepted).
+                should_store_answer = metadata.get('is_valid_answer') or  metadata.get('asked_question') or metadata.get('info_gathering_complete')
+                if should_store_answer:
+                    # Check for duplicates (safe guard)
+                    if not any(pair['question'] == question_that_was_asked for pair in session['collected_information']):
+                        qa_pair = {
+                            'question': question_that_was_asked,# Use the PREVIOUSLY stored question
+                            'answer': query,# Use the CURRENT user query
+                            'timestamp': datetime.now(pytz.UTC).isoformat()
+                        }
+                        session['collected_information'].append(qa_pair)
+                        logger.info(f"Added to collected_information: Q: {question_that_was_asked[:50]}... A: {query[:50]}...")
+                    # Clear the last question so it's not reused
+                    session['last_ai_question'] = None
+        # --- Step 2: Store the NEW question (if any) for the NEXT turn ---
+        # This MUST run *outside* the 'if session_created' block to capture the *first* question.
+        if metadata.get('asked_question') and metadata.get('question_text'):
+            session['last_ai_question'] = metadata['question_text']# This is the NEW question
+            session['questions_asked_count'] += 1 # Only increment count if incident is active
+            logger.info(f"Question asked: {metadata['question_text']}")
         
         # ========== HANDLE KB SEARCH FOR NEW INCIDENTS ==========
         if metadata.get('should_search_kb') and not session['kb_searched'] and not session['incident_created']:
@@ -306,6 +339,8 @@ CRITICAL RULES FOR EXTRACTION:
                 "status": session['status'],
                 "kb_reference": f"KB_{session['kb_chunk']['kb_id']}" if session['kb_chunk'] else "No KB Match",
                 "additional_info": session['conversation'].copy(),
+                "collected_information": session['collected_information'].copy(),  # NEW
+                "admin_messages": [],  # NEW
                 "created_on": datetime.utcnow(),
                 "updated_on": datetime.utcnow()
             }
@@ -347,6 +382,7 @@ CRITICAL RULES FOR EXTRACTION:
             await update_incident_in_db(
                 incident_id, 
                 session['conversation'], 
+                session['collected_information'],  # NEW
                 session['status'], 
                 session['kb_chunk']
             )
@@ -354,8 +390,6 @@ CRITICAL RULES FOR EXTRACTION:
         # Update previous status for next iteration
         session['previous_status'] = session['status']
         
-        # The return values (response_text, incident_id, status) are used by the 
-        # client application to display the final status message and metadata.
         return response_text, session.get('incident_id'), session['status'], status_changed
         
     except Exception as e:
@@ -371,12 +405,18 @@ CRITICAL RULES FOR EXTRACTION:
         
         incident_id = session.get('incident_id')
         if incident_id:
-            await update_incident_in_db(incident_id, session['conversation'], 'Error', session['kb_chunk'])
+            await update_incident_in_db(
+                incident_id, 
+                session['conversation'], 
+                session['collected_information'],  # NEW
+                'Error', 
+                session['kb_chunk']
+            )
         
         return error_msg, None, "Error", False
 
-async def update_incident_in_db(incident_id: str, full_conversation: list, status: str, kb_chunk: dict = None):
-    """Update incident in MongoDB with full conversation and KB reference"""
+async def update_incident_in_db(incident_id: str, full_conversation: list, collected_info: list, status: str, kb_chunk: dict = None):
+    """Update incident in MongoDB with full conversation, collected info and KB reference"""
     try:
         current_incident = await get_incident(incident_id)
         
@@ -384,6 +424,7 @@ async def update_incident_in_db(incident_id: str, full_conversation: list, statu
             update_data = {
                 "status": status,
                 "additional_info": full_conversation,
+                "collected_information": collected_info,  # NEW
                 "updated_on": datetime.now(pytz.UTC).isoformat()
             }
             if kb_chunk:
@@ -392,7 +433,7 @@ async def update_incident_in_db(incident_id: str, full_conversation: list, statu
                 update_data["kb_reference"] = "No KB Match"
             
             await update_incident(incident_id, update_data)
-            logger.info(f"Updated incident {incident_id} with status: {status}")
+            logger.info(f"Updated incident {incident_id} with status: {status}, collected_info items: {len(collected_info)}")
         else:
             logger.warning(f"Incident {incident_id} not found for update")
             
