@@ -49,7 +49,7 @@ function Header({ onNewConversation, conversationActive }) {
               onClick={onNewConversation}
               title="Start new conversation"
             >
-              🗨️ New Chat
+              🗨️ Clear Session
             </button>
           )}
         </div>

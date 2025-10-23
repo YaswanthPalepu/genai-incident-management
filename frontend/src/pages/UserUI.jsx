@@ -118,7 +118,7 @@ function UserUI() {
 
   const handleNewConversation = () => {
     if (conversationActive && messages.length > 1) {
-      if (window.confirm('Start a new conversation? Your current session will be saved as an incident.')) {
+      if (window.confirm('Start a new session?Your current session will be cleared.Please Click Okay')) {
         handleEndSession();
       }
     } else {
