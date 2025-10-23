@@ -94,4 +94,16 @@ Solution Steps:
   5. Escalate to hardware team if issue persists after optimization.
 
 --------------------------------------------------
-
+[KB_ID: 7]
+Use Case: USB Device Not Recognized
+Required Info:
+  - Device Type (Mouse/Keyboard/Storage/etc.)
+  - Operating System
+  - USB Port Used
+  - Device Model
+Solution Steps:
+  1. Validate user eligibility and business need.
+  2. Obtain manager approval if required.
+  3. Add user permissions via Active Directory or file server settings.
+  4. Notify user of granted access.
+  5. Document changes for audit compliance.
