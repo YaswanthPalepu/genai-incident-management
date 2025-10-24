@@ -134,49 +134,70 @@ def load_and_vectorize_kb():
 
 def hybrid_search_kb(query: str, n_results: int = 3):
     """
-    Hybrid search: BM25-like + semantic search
-    Returns chunks with scores
+    Hybrid search: Combines semantic and keyword search with fixed weights
     """
+    # Fixed weights - you can adjust these internally
+    semantic_weight = 0.7
+    keyword_weight = 0.3
+    
     try:
         collection = get_or_create_collection()
         
-        # Get query embedding
+        # Get semantic results
         query_embedding = embedding_model.encode(query).tolist()
-        
-        # Search with embeddings
-        results = collection.query(
+        semantic_results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=n_results,
+            n_results=n_results * 2,  # Get more for re-ranking
             include=["documents", "distances", "metadatas"]
         )
         
-        # Format results
-        formatted_results = []
-        if results['documents'] and results['documents'][0]:
-            for i, doc in enumerate(results['documents'][0]):
-                distance = results['distances'][0][i]
-                metadata = results['metadatas'][0][i]
+        hybrid_results = []
+        
+        if semantic_results['documents'] and semantic_results['documents'][0]:
+            for i, doc in enumerate(semantic_results['documents'][0]):
+                distance = semantic_results['distances'][0][i]
+                metadata = semantic_results['metadatas'][0][i]
                 
-                # Convert distance to similarity score
-                # Cosine distance ranges from 0-2, convert to 0-1 similarity
-                similarity = 1 - (distance / 2) if distance <= 2 else 0
+                # Semantic score
+                semantic_score = 1 - (distance / 2) if distance <= 2 else 0
                 
-                formatted_results.append({
+                # Keyword score
+                keyword_score = simple_keyword_match(query, doc)
+                
+                # Combined score
+                hybrid_score = (semantic_weight * semantic_score + 
+                              keyword_weight * keyword_score)
+                
+                hybrid_results.append({
                     'kb_id': metadata['kb_id'],
                     'content': doc,
-                    'similarity': similarity,
+                    'similarity': hybrid_score,  # Keep 'similarity' for compatibility
+                    'semantic_score': semantic_score,
+                    'keyword_score': keyword_score,
                     'distance': distance
                 })
         
-        # Sort by similarity descending
-        formatted_results.sort(key=lambda x: x['similarity'], reverse=True)
+        # Sort by hybrid score and return top results
+        hybrid_results.sort(key=lambda x: x['similarity'], reverse=True)
+        final_results = hybrid_results[:n_results]
         
-        logger.info(f"Hybrid search for '{query}' returned {len(formatted_results)} results")
-        return formatted_results
-    
+        logger.info(f"Hybrid search for '{query}' returned {len(final_results)} results")
+        return final_results
+
     except Exception as e:
         logger.error(f"Error in hybrid search: {e}")
         return []
+
+def simple_keyword_match(query: str, document: str) -> float:
+    """Simple keyword matching score"""
+    query_terms = [term.lower() for term in query.split() if len(term) > 2]
+    doc_lower = document.lower()
+    
+    if not query_terms:
+        return 0.0
+    
+    matches = sum(1 for term in query_terms if term in doc_lower)
+    return matches / len(query_terms)
 
 def get_kb_chunk_by_id(kb_id: int):
     """Get specific KB chunk by ID"""

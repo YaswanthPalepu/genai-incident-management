@@ -5,7 +5,8 @@ import {
   getIncidentDetails,
   updateIncidentStatus,
   getKnowledgeBaseContent,
-  updateKnowledgeBase
+  updateKnowledgeBase,
+  deleteIncident
 } from '../services/api';
 
 function AdminDashboard({ setAuth }) {
@@ -69,6 +70,30 @@ function AdminDashboard({ setAuth }) {
       alert('Failed to update incident status.');
     }
   };
+
+  // --- NEW HANDLER FUNCTION FOR DELETION ---
+  const handleDeleteIncident = async (incidentId) => {
+    if (!window.confirm(`Are you sure you want to permanently delete incident ${incidentId}? This cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      // NOTE: This assumes you have implemented deleteIncident in ../services/api
+      await deleteIncident(incidentId); 
+      alert(`Incident ${incidentId} deleted successfully.`);
+      
+      // Close modal if the deleted incident was selected
+      if (selectedIncident && selectedIncident.incident_id === incidentId) {
+        setSelectedIncident(null);
+      }
+      
+      fetchIncidents(); // Refresh the list
+    } catch (error) {
+      console.error('Error deleting incident:', error);
+      alert('Failed to delete incident. Check backend implementation.');
+    }
+  };
+  // ----------------------------------------
 
   const handleUpdateKb = async () => {
     if (!kbContent.trim()) {
@@ -238,6 +263,13 @@ function AdminDashboard({ setAuth }) {
                           >
                             View
                           </button>
+                          <button 
+                            className="delete-button"
+                            onClick={() => handleDeleteIncident(incident.incident_id)}
+                            title="Delete Incident"
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -253,6 +285,7 @@ function AdminDashboard({ setAuth }) {
             incident={selectedIncident}
             onClose={() => setSelectedIncident(null)}
             onStatusChange={handleStatusChange}
+            onDelete={handleDeleteIncident}
             getStatusColor={getStatusColor}
           />
         )}
@@ -261,7 +294,7 @@ function AdminDashboard({ setAuth }) {
   );
 }
 
-function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColor }) {
+function IncidentDetailsModal({ incident, onClose, onStatusChange,onDelete, getStatusColor }) {
   const [newStatus, setNewStatus] = useState(incident.status);
   const [adminMessage, setAdminMessage] = useState('');
   const [showMessageInput, setShowMessageInput] = useState(false);
@@ -294,7 +327,15 @@ function IncidentDetailsModal({ incident, onClose, onStatusChange, getStatusColo
     <div className="incident-details-modal">
       <div className="modal-content">
         <button className="close-button" onClick={onClose}>&times;</button>
-        <h3>Incident: {incident.incident_id}</h3>
+        <h3>Incident: {incident.incident_id}
+        <button 
+        className="delete-button-modal"
+        onClick={() => onDelete(incident.incident_id)}
+        title="Delete this Incident"
+        >
+        🗑️ Delete
+        </button>
+        </h3>
         
         <div className="incident-summary">
           <div className="summary-item">

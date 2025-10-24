@@ -52,6 +52,12 @@ export const getAdminStats = () => {
   return api.get('/admin/stats');
 };
 
+export const deleteIncident = (incidentId) => {
+  // Assuming your admin routes are prefixed with '/admin' (check your main.py setup)
+  // If not, use '/incidents/'
+  return api.delete(`/admin/incidents/${incidentId}`); 
+};
+
 // Error handling
 api.interceptors.response.use(
   (response) => response,

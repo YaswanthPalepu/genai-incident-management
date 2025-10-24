@@ -1,7 +1,7 @@
 # backend/admin_routes.py - UPDATED WITH ADMIN MESSAGES
 from fastapi import APIRouter, HTTPException
 from models import IncidentUpdate, AdminKBUpdate
-from db.mongodb import get_all_incidents, get_incident, update_incident
+from db.mongodb import delete_incident, get_all_incidents, get_incident, update_incident
 from services.kb_service import update_knowledge_base_file, get_knowledge_base_content
 from datetime import datetime
 import logging
@@ -152,3 +152,23 @@ async def get_admin_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
+    
+@router.delete("/incidents/{incident_id}")
+async def delete_incident_route(incident_id: str):
+    """Delete specific incident by ID"""
+    try:
+        # Calls the function from db.mongodb
+        success = await delete_incident(incident_id) 
+        if not success:
+            # 404 is correct if the ID is not found
+            raise HTTPException(status_code=404, detail="Incident not found or already deleted")
+        
+        logger.info(f"Incident deleted: {incident_id}")
+        return {"success": True, "message": f"Incident {incident_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting incident via API: {e}")
+        # 500 triggers the "Failed to delete" alert
+        raise HTTPException(status_code=500, detail="Failed to delete incident")

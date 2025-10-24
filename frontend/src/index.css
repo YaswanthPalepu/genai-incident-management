@@ -30,6 +30,8 @@
   --chat-ai-bg: #f1f3f4;
   --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   --radius: 8px;
+  --delete-purple: #530d0d;
+  --delete-purple-hover: #530d0d;
 }
 
 
@@ -1086,6 +1088,57 @@ h3 {
   .status-update-section {
     padding: 0.75rem;
   }
+}
+
+/* --- Action Buttons (View/Delete) --- */
+
+/* Add this to the existing .action-buttons section or create a new one */
+
+.delete-button {
+  background: var(--delete-purple);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px; /* Matches other buttons */
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 0.3s ease;
+  white-space: nowrap;
+}
+
+.delete-button:hover {
+  background: var(--delete-purple-hover);
+}
+
+
+/* --- Delete Button in Modal --- */
+
+.delete-button-modal {
+  /* Style to be prominent but not disruptive */
+  background: none;
+  border: 1px solid var(--delete-purple);
+  color: var(--delete-purple);
+  padding: 8px 15px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.delete-button-modal:hover {
+  background: var(--delete-purple-hover);
+  color: white;
+}
+
+/* Ensure the modal header layout accommodates the button */
+.modal-content h3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-top: 0;
 }
 
 /* Utility Classes */
